@@ -541,9 +541,16 @@ async function translateSelection() {
       translationTooltip.textContent = response.translation;
     }
   } catch (error) {
-    console.error('선택 텍스트 번역 오류:', error);
-    translationTooltip.textContent = '번역 실패';
-    translationTooltip.style.backgroundColor = '#d33';
+    console.error('[Gemini Translator] Translation error:', error);
+    
+    // Extension context invalidated 에러 처리
+    if (error.message && error.message.includes('Extension context invalidated')) {
+      translationTooltip.textContent = '페이지를 새로고침해주세요';
+      translationTooltip.style.backgroundColor = '#ff9800';
+    } else {
+      translationTooltip.textContent = '번역 실패';
+      translationTooltip.style.backgroundColor = '#d33';
+    }
   }
   
   // 3초 후 툴팁 제거
