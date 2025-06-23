@@ -512,16 +512,12 @@ async function translateSelection() {
     return;
   }
   
-  // 기존 툴팁 제거
-  if (translationTooltip) {
-    translationTooltip.remove();
-  }
+  // 활성 요소 확인 (input 또는 textarea인지)
+  const activeElement = document.activeElement;
+  const isInputField = activeElement && 
+    (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA' || activeElement.contentEditable === 'true');
   
-  // 새 툴팁 생성
-  translationTooltip = createTranslationTooltip();
-  translationTooltip.textContent = '번역 중...';
-  translationTooltip.style.opacity = '1';
-  updateTooltipPosition(translationTooltip, selection);
+  console.log('[Gemini Translator] Is input field:', isInputField);
   
   try {
     // 설정 가져오기
@@ -535,23 +531,81 @@ async function translateSelection() {
     });
     
     if (response.error) {
-      translationTooltip.textContent = '번역 오류';
-      translationTooltip.style.backgroundColor = '#d33';
+      showTranslationError(response.error, isInputField);
     } else {
-      translationTooltip.textContent = response.translation;
+      const translatedText = response.translation;
+      
+      if (isInputField) {
+        // 입력 필드에서는 텍스트를 직접 교체
+        replaceSelectedText(activeElement, translatedText);
+      } else {
+        // 일반 텍스트에서는 툴팁으로 표시
+        showTranslationTooltip(translatedText, selection);
+      }
     }
   } catch (error) {
     console.error('[Gemini Translator] Translation error:', error);
     
     // Extension context invalidated 에러 처리
     if (error.message && error.message.includes('Extension context invalidated')) {
-      translationTooltip.textContent = '페이지를 새로고침해주세요';
-      translationTooltip.style.backgroundColor = '#ff9800';
+      if (!isInputField) {
+        showTranslationTooltip('페이지를 새로고침해주세요', selection, '#ff9800');
+      }
     } else {
-      translationTooltip.textContent = '번역 실패';
-      translationTooltip.style.backgroundColor = '#d33';
+      showTranslationError(error.message, isInputField);
     }
   }
+}
+
+// 입력 필드에서 선택된 텍스트 교체
+function replaceSelectedText(element, newText) {
+  if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') {
+    const start = element.selectionStart;
+    const end = element.selectionEnd;
+    const value = element.value;
+    
+    // 텍스트 교체
+    element.value = value.substring(0, start) + newText + value.substring(end);
+    
+    // 커서를 번역된 텍스트 끝으로 이동
+    element.selectionStart = element.selectionEnd = start + newText.length;
+    
+    // change 이벤트 발생 (React 등의 프레임워크 호환성)
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+    
+    console.log('[Gemini Translator] Text replaced in input field');
+  } else if (element.contentEditable === 'true') {
+    // contentEditable 요소 처리
+    const selection = window.getSelection();
+    if (selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      range.deleteContents();
+      range.insertNode(document.createTextNode(newText));
+      
+      // 커서를 번역된 텍스트 끝으로 이동
+      range.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+    
+    console.log('[Gemini Translator] Text replaced in contentEditable element');
+  }
+}
+
+// 툴팁으로 번역 결과 표시
+function showTranslationTooltip(text, selection, bgColor = '#1a73e8') {
+  // 기존 툴팁 제거
+  if (translationTooltip) {
+    translationTooltip.remove();
+  }
+  
+  // 새 툴팁 생성
+  translationTooltip = createTranslationTooltip();
+  translationTooltip.textContent = text;
+  translationTooltip.style.backgroundColor = bgColor;
+  translationTooltip.style.opacity = '1';
+  updateTooltipPosition(translationTooltip, selection);
   
   // 3초 후 툴팁 제거
   setTimeout(() => {
@@ -563,6 +617,17 @@ async function translateSelection() {
       }, 200);
     }
   }, 3000);
+}
+
+// 번역 오류 표시
+function showTranslationError(error, isInputField) {
+  if (!isInputField) {
+    const selection = window.getSelection();
+    showTranslationTooltip('번역 오류', selection, '#d33');
+  } else {
+    // 입력 필드에서는 콘솔에만 오류 표시
+    console.error('[Gemini Translator] Translation failed:', error);
+  }
 }
 
 // Ctrl+C+C 감지를 위한 키보드 이벤트 리스너
