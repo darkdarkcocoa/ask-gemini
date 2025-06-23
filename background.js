@@ -149,18 +149,28 @@ async function handleSelectionTranslation(message, sender, sendResponse) {
     
     // 응답에서 번역된 텍스트 추출
     let translation = '';
-    if (data.candidates && data.candidates[0] && data.candidates[0].content) {
-      const parts = data.candidates[0].content.parts;
-      if (parts && parts[0] && parts[0].text) {
-        translation = parts[0].text.trim();
+    try {
+      if (data && data.candidates && Array.isArray(data.candidates) && data.candidates.length > 0) {
+        const candidate = data.candidates[0];
+        if (candidate && candidate.content && candidate.content.parts && Array.isArray(candidate.content.parts)) {
+          const part = candidate.content.parts[0];
+          if (part && typeof part.text === 'string') {
+            translation = part.text.trim();
+          }
+        }
       }
+      
+      if (!translation) {
+        console.error('Empty translation result from API:', data);
+        throw new Error('번역 결과가 비어있습니다.');
+      }
+      
+      console.log('Selection translation successful:', translation);
+      sendResponse({ translation });
+    } catch (parseError) {
+      console.error('Error parsing API response:', parseError, data);
+      throw new Error('API 응답 파싱 오류: ' + parseError.message);
     }
-    
-    if (!translation) {
-      throw new Error('번역 결과를 가져올 수 없습니다.');
-    }
-    
-    sendResponse({ translation });
   } catch (error) {
     console.error('Selection translation error:', error);
     sendResponse({ error: error.message });

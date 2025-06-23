@@ -532,12 +532,25 @@ async function translateSelection() {
     
     console.log('[Gemini Translator] API response:', response);
     
+    // API 응답이 null이거나 undefined인 경우 처리
+    if (!response) {
+      console.error('[Gemini Translator] No response from API');
+      showTranslationError('API 응답이 없습니다', isInputField);
+      return;
+    }
+    
     if (response.error) {
       console.log('[Gemini Translator] Translation error:', response.error);
       showTranslationError(response.error, isInputField);
-    } else {
-      const translatedText = response.translation;
+    } else if (response.translation) {
+      const translatedText = response.translation.trim();
       console.log('[Gemini Translator] Translated text:', translatedText);
+      
+      if (!translatedText) {
+        console.warn('[Gemini Translator] Empty translation received');
+        showTranslationError('빈 번역 결과', isInputField);
+        return;
+      }
       
       if (isInputField) {
         // 입력 필드에서는 텍스트를 직접 교체
@@ -547,17 +560,30 @@ async function translateSelection() {
         // 일반 텍스트에서는 툴팁으로 표시
         showTranslationTooltip(translatedText, selection);
       }
+    } else {
+      console.error('[Gemini Translator] Invalid response format:', response);
+      showTranslationError('잘못된 API 응답 형식', isInputField);
     }
   } catch (error) {
     console.error('[Gemini Translator] Translation error:', error);
     
     // Extension context invalidated 에러 처리
-    if (error.message && error.message.includes('Extension context invalidated')) {
+    if (error.message && (error.message.includes('Extension context invalidated') || 
+                         error.message.includes('Could not establish connection'))) {
+      console.warn('[Gemini Translator] Extension needs reload');
       if (!isInputField) {
-        showTranslationTooltip('페이지를 새로고침해주세요', selection, '#ff9800');
+        // selection이 여전히 유효한지 확인
+        try {
+          if (selection && selection.rangeCount > 0) {
+            showTranslationTooltip('확장 프로그램을 새로고침해주세요', selection, '#ff9800');
+          }
+        } catch (e) {
+          console.error('[Gemini Translator] Cannot show tooltip:', e);
+        }
       }
     } else {
-      showTranslationError(error.message, isInputField);
+      const errorMsg = error.message || '알 수 없는 오류';
+      showTranslationError(errorMsg, isInputField);
     }
   }
 }
