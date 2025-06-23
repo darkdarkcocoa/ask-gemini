@@ -122,8 +122,33 @@ async function handleSelectionTranslation(message, sender, sendResponse) {
       return;
     }
     
-    // 번역 프롬프트 생성
-    const prompt = `Translate the following text to ${targetLang}. Return ONLY the translation without any explanations or additional text:\n\n${text}`;
+    // 번역 프롬프트 생성 (언어 코드를 실제 언어명으로 매핑)
+    const languageNames = {
+      'en': 'English',
+      'ko': 'Korean',
+      'ja': 'Japanese', 
+      'zh': 'Chinese',
+      'fr': 'French',
+      'de': 'German',
+      'es': 'Spanish',
+      'ru': 'Russian'
+    };
+    
+    const targetLanguageName = languageNames[targetLang] || 'English';
+    
+    const prompt = `You are a professional translator. Translate the following text from any language to ${targetLanguageName}.
+
+IMPORTANT RULES:
+- You MUST translate the text, do not return the original text
+- Return ONLY the translated text, no explanations or additional content
+- If the text is already in ${targetLanguageName}, translate it to a different language that makes sense
+- Maintain the original meaning and tone
+
+Text to translate: "${text}"
+
+Translation:`;
+    
+    console.log('Selection translation prompt:', prompt);
     
     // Gemini API 호출
     const response = await fetch(`${ENDPOINT}?key=${apiKey}`, {
@@ -132,9 +157,10 @@ async function handleSelectionTranslation(message, sender, sendResponse) {
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         generationConfig: {
-          temperature: 0.2,
-          topP: 0.8,
-          topK: 40
+          temperature: 0.1,
+          topP: 0.9,
+          topK: 20,
+          maxOutputTokens: 1000
         }
       })
     });
