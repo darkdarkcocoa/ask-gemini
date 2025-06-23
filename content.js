@@ -505,7 +505,12 @@ async function translateSelection() {
   const selection = window.getSelection();
   const selectedText = selection.toString().trim();
   
-  if (!selectedText) return;
+  console.log('[Gemini Translator] Selected text:', selectedText);
+  
+  if (!selectedText) {
+    console.log('[Gemini Translator] No text selected');
+    return;
+  }
   
   // 기존 툴팁 제거
   if (translationTooltip) {
@@ -555,18 +560,25 @@ async function translateSelection() {
 
 // Ctrl+C+C 감지를 위한 키보드 이벤트 리스너
 document.addEventListener('keydown', async (e) => {
+  // 디버깅을 위한 로그
+  if (e.ctrlKey && e.key === 'c') {
+    console.log('[Gemini Translator] Ctrl+C pressed, enabled:', selectionTranslateEnabled);
+  }
+  
   if (!selectionTranslateEnabled) return;
   
-  // Ctrl+C 감지
-  if (e.ctrlKey && e.key === 'c') {
+  // Ctrl+C 감지 (대소문자 모두 처리)
+  if (e.ctrlKey && (e.key === 'c' || e.key === 'C')) {
     const currentTime = Date.now();
     
     // 이전 Ctrl+C와의 시간 차이가 500ms 이내면 번역 실행
     if (currentTime - lastCtrlCTime < 500) {
+      console.log('[Gemini Translator] Double Ctrl+C detected, translating...');
       e.preventDefault(); // 복사 동작 방지
       await translateSelection();
       lastCtrlCTime = 0; // 리셋
     } else {
+      console.log('[Gemini Translator] First Ctrl+C detected');
       lastCtrlCTime = currentTime;
     }
   }
