@@ -444,9 +444,156 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ success: false });
     return true;
   }
+  
+  // 선택 번역 토글 처리
+  if (message.type === 'SELECTION_TRANSLATE_TOGGLE') {
+    selectionTranslateEnabled = message.enabled;
+    sendResponse({ success: true });
+    return true;
+  }
 });
 
-// 페이지 로드 완료 시 준비 완료 메시지 전송
-window.addEventListener('load', () => {
+// 선택 텍스트 번역 기능을 위한 변수
+let lastCtrlCTime = 0;
+let selectionTranslateEnabled = true;
+let translationTooltip = null;
+
+// 번역 툴팁 생성 함수
+function createTranslationTooltip() {
+  const tooltip = document.createElement('div');
+  tooltip.id = 'gemini-translation-tooltip';
+  tooltip.style.cssText = `
+    position: absolute;
+    z-index: 999999;
+    background-color: #1a73e8;
+    color: white;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-family: Arial, sans-serif;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+    max-width: 300px;
+    word-wrap: break-word;
+  `;
+  document.body.appendChild(tooltip);
+  return tooltip;
+}
+
+// 툴팁 위치 업데이트 함수
+function updateTooltipPosition(tooltip, selection) {
+  const range = selection.getRangeAt(0);
+  const rect = range.getBoundingClientRect();
+  
+  tooltip.style.left = `${rect.left + window.scrollX}px`;
+  tooltip.style.top = `${rect.bottom + window.scrollY + 5}px`;
+  
+  // 화면 밖으로 나가는 경우 위치 조정
+  const tooltipRect = tooltip.getBoundingClientRect();
+  if (tooltipRect.right > window.innerWidth) {
+    tooltip.style.left = `${window.innerWidth - tooltipRect.width - 10}px`;
+  }
+  if (tooltipRect.bottom > window.innerHeight) {
+    tooltip.style.top = `${rect.top + window.scrollY - tooltipRect.height - 5}px`;
+  }
+}
+
+// 선택 텍스트 번역 함수
+async function translateSelection() {
+  const selection = window.getSelection();
+  const selectedText = selection.toString().trim();
+  
+  if (!selectedText) return;
+  
+  // 기존 툴팁 제거
+  if (translationTooltip) {
+    translationTooltip.remove();
+  }
+  
+  // 새 툴팁 생성
+  translationTooltip = createTranslationTooltip();
+  translationTooltip.textContent = '번역 중...';
+  translationTooltip.style.opacity = '1';
+  updateTooltipPosition(translationTooltip, selection);
+  
+  try {
+    // 설정 가져오기
+    const settings = await chrome.runtime.sendMessage({ type: 'GET_SETTINGS' });
+    
+    // 번역 요청
+    const response = await chrome.runtime.sendMessage({
+      type: 'TRANSLATE_SELECTION',
+      text: selectedText,
+      targetLang: settings.targetLang || 'en'
+    });
+    
+    if (response.error) {
+      translationTooltip.textContent = '번역 오류';
+      translationTooltip.style.backgroundColor = '#d33';
+    } else {
+      translationTooltip.textContent = response.translation;
+    }
+  } catch (error) {
+    console.error('선택 텍스트 번역 오류:', error);
+    translationTooltip.textContent = '번역 실패';
+    translationTooltip.style.backgroundColor = '#d33';
+  }
+  
+  // 3초 후 툴팁 제거
+  setTimeout(() => {
+    if (translationTooltip) {
+      translationTooltip.style.opacity = '0';
+      setTimeout(() => {
+        translationTooltip?.remove();
+        translationTooltip = null;
+      }, 200);
+    }
+  }, 3000);
+}
+
+// Ctrl+C+C 감지를 위한 키보드 이벤트 리스너
+document.addEventListener('keydown', async (e) => {
+  if (!selectionTranslateEnabled) return;
+  
+  // Ctrl+C 감지
+  if (e.ctrlKey && e.key === 'c') {
+    const currentTime = Date.now();
+    
+    // 이전 Ctrl+C와의 시간 차이가 500ms 이내면 번역 실행
+    if (currentTime - lastCtrlCTime < 500) {
+      e.preventDefault(); // 복사 동작 방지
+      await translateSelection();
+      lastCtrlCTime = 0; // 리셋
+    } else {
+      lastCtrlCTime = currentTime;
+    }
+  }
+});
+
+// 클릭 시 툴팁 제거
+document.addEventListener('click', () => {
+  if (translationTooltip) {
+    translationTooltip.style.opacity = '0';
+    setTimeout(() => {
+      translationTooltip?.remove();
+      translationTooltip = null;
+    }, 200);
+  }
+});
+
+// 페이지 로드 완료 시 준비 완료 메시지 전송 및 설정 로드
+window.addEventListener('load', async () => {
   chrome.runtime.sendMessage({ type: 'CONTENT_READY' });
+  
+  // 선택 번역 설정 로드
+  try {
+    const settings = await chrome.runtime.sendMessage({ type: 'GET_SETTINGS' });
+    if (settings.selectionTranslateEnabled !== undefined) {
+      selectionTranslateEnabled = settings.selectionTranslateEnabled;
+    }
+  } catch (error) {
+    console.error('설정 로드 오류:', error);
+  }
 });

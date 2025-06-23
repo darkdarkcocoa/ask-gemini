@@ -81,22 +81,91 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     chrome.storage.sync.set({
       apiKey: message.apiKey,
       sourceLang: message.sourceLang,
-      targetLang: message.targetLang
+      targetLang: message.targetLang,
+      selectionTranslateEnabled: message.selectionTranslateEnabled
     });
     sendResponse({ success: true });
   }
   
   if (message.type === 'GET_SETTINGS') {
-    chrome.storage.sync.get(['apiKey', 'sourceLang', 'targetLang'], (data) => {
+    chrome.storage.sync.get(['apiKey', 'sourceLang', 'targetLang', 'selectionTranslateEnabled'], (data) => {
       sendResponse({
         apiKey: data.apiKey || '',
         sourceLang: data.sourceLang || 'auto',
-        targetLang: data.targetLang || 'ko'
+        targetLang: data.targetLang || 'ko',
+        selectionTranslateEnabled: data.selectionTranslateEnabled !== false // 기본값 true
       });
     });
     return true; // 비동기 응답을 위해 true 반환
   }
+  
+  // 선택 텍스트 번역 처리
+  if (message.type === 'TRANSLATE_SELECTION') {
+    handleSelectionTranslation(message, sender, sendResponse);
+    return true; // 비동기 응답을 위해 true 반환
+  }
 });
+
+// 선택 텍스트 번역 함수
+async function handleSelectionTranslation(message, sender, sendResponse) {
+  try {
+    const { text, targetLang = 'en' } = message;
+    const apiKey = await getApiKey();
+    
+    if (!apiKey) {
+      sendResponse({ error: 'API 키가 설정되지 않았습니다.' });
+      return;
+    }
+    
+    if (!text || text.trim() === '') {
+      sendResponse({ error: '번역할 텍스트가 없습니다.' });
+      return;
+    }
+    
+    // 번역 프롬프트 생성
+    const prompt = `Translate the following text to ${targetLang}. Return ONLY the translation without any explanations or additional text:\n\n${text}`;
+    
+    // Gemini API 호출
+    const response = await fetch(`${ENDPOINT}?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.2,
+          topP: 0.8,
+          topK: 40
+        }
+      })
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Selection translation API error:', errorText);
+      throw new Error(`Gemini API 오류: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    // 응답에서 번역된 텍스트 추출
+    let translation = '';
+    if (data.candidates && data.candidates[0] && data.candidates[0].content) {
+      const parts = data.candidates[0].content.parts;
+      if (parts && parts[0] && parts[0].text) {
+        translation = parts[0].text.trim();
+      }
+    }
+    
+    if (!translation) {
+      throw new Error('번역 결과를 가져올 수 없습니다.');
+    }
+    
+    sendResponse({ translation });
+  } catch (error) {
+    console.error('Selection translation error:', error);
+    sendResponse({ error: error.message });
+  }
+}
 
 // 번역 처리 함수
 async function handleTranslation(message, sender, sendResponse) {
