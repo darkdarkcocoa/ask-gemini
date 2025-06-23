@@ -530,13 +530,18 @@ async function translateSelection() {
       targetLang: settings.targetLang || 'en'
     });
     
+    console.log('[Gemini Translator] API response:', response);
+    
     if (response.error) {
+      console.log('[Gemini Translator] Translation error:', response.error);
       showTranslationError(response.error, isInputField);
     } else {
       const translatedText = response.translation;
+      console.log('[Gemini Translator] Translated text:', translatedText);
       
       if (isInputField) {
         // 입력 필드에서는 텍스트를 직접 교체
+        console.log('[Gemini Translator] Replacing text in input field...');
         replaceSelectedText(activeElement, translatedText);
       } else {
         // 일반 텍스트에서는 툴팁으로 표시
@@ -559,27 +564,49 @@ async function translateSelection() {
 
 // 입력 필드에서 선택된 텍스트 교체
 function replaceSelectedText(element, newText) {
+  console.log('[Gemini Translator] replaceSelectedText called with:', {
+    element: element.tagName,
+    newText: newText,
+    selectionStart: element.selectionStart,
+    selectionEnd: element.selectionEnd,
+    currentValue: element.value
+  });
+  
   if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') {
     const start = element.selectionStart;
     const end = element.selectionEnd;
     const value = element.value;
     
+    console.log('[Gemini Translator] Before replacement:', {
+      start, end, value,
+      selectedText: value.substring(start, end)
+    });
+    
     // 텍스트 교체
-    element.value = value.substring(0, start) + newText + value.substring(end);
+    const newValue = value.substring(0, start) + newText + value.substring(end);
+    element.value = newValue;
     
     // 커서를 번역된 텍스트 끝으로 이동
-    element.selectionStart = element.selectionEnd = start + newText.length;
+    const newCursorPos = start + newText.length;
+    element.selectionStart = element.selectionEnd = newCursorPos;
+    
+    console.log('[Gemini Translator] After replacement:', {
+      newValue: element.value,
+      newCursorPos: newCursorPos
+    });
     
     // change 이벤트 발생 (React 등의 프레임워크 호환성)
     element.dispatchEvent(new Event('input', { bubbles: true }));
     element.dispatchEvent(new Event('change', { bubbles: true }));
     
-    console.log('[Gemini Translator] Text replaced in input field');
+    console.log('[Gemini Translator] Text replaced in input field - COMPLETED');
   } else if (element.contentEditable === 'true') {
     // contentEditable 요소 처리
     const selection = window.getSelection();
     if (selection.rangeCount > 0) {
       const range = selection.getRangeAt(0);
+      console.log('[Gemini Translator] ContentEditable - selected text:', range.toString());
+      
       range.deleteContents();
       range.insertNode(document.createTextNode(newText));
       
@@ -589,7 +616,7 @@ function replaceSelectedText(element, newText) {
       selection.addRange(range);
     }
     
-    console.log('[Gemini Translator] Text replaced in contentEditable element');
+    console.log('[Gemini Translator] Text replaced in contentEditable element - COMPLETED');
   }
 }
 
