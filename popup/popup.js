@@ -6,6 +6,7 @@ const targetLangSelect = document.getElementById('targetLang');
 const translateBtn = document.getElementById('translateBtn');
 const toggleBtn = document.getElementById('toggleBtn');
 const statusArea = document.getElementById('statusArea');
+const selectionTranslateCheckbox = document.getElementById('selectionTranslate');
 
 // 상태 표시 함수
 function showStatus(message, type = 'info') {
@@ -45,6 +46,10 @@ async function loadSettings() {
     if (settings.targetLang) {
       targetLangSelect.value = settings.targetLang;
     }
+    
+    if (settings.selectionTranslateEnabled !== undefined) {
+      selectionTranslateCheckbox.checked = settings.selectionTranslateEnabled;
+    }
   } catch (error) {
     console.error('설정 로드 오류:', error);
     showStatus('설정을 로드하는 중 오류가 발생했습니다.', 'error');
@@ -58,7 +63,8 @@ async function saveSettings() {
       type: 'SAVE_SETTINGS',
       apiKey: apiKeyInput.value.trim(),
       sourceLang: sourceLangSelect.value,
-      targetLang: targetLangSelect.value
+      targetLang: targetLangSelect.value,
+      selectionTranslateEnabled: selectionTranslateCheckbox.checked
     });
     
     showStatus('설정이 저장되었습니다.', 'success');
@@ -147,3 +153,18 @@ toggleApiKeyBtn.addEventListener('click', toggleApiKeyVisibility);
 apiKeyInput.addEventListener('blur', saveSettings);
 sourceLangSelect.addEventListener('change', saveSettings);
 targetLangSelect.addEventListener('change', saveSettings);
+selectionTranslateCheckbox.addEventListener('change', async () => {
+  await saveSettings();
+  // 현재 탭의 content script에 설정 변경 알림
+  try {
+    const tab = await getCurrentTab();
+    if (tab && tab.id) {
+      chrome.tabs.sendMessage(tab.id, {
+        type: 'SELECTION_TRANSLATE_TOGGLE',
+        enabled: selectionTranslateCheckbox.checked
+      });
+    }
+  } catch (error) {
+    console.error('설정 전달 오류:', error);
+  }
+});

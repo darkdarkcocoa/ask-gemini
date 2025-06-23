@@ -151,6 +151,24 @@ button:active {
   color: #1a73e8;
 }
 
+/* 체크박스 스타일 */
+input[type="checkbox"] {
+  width: auto;
+  margin-right: 8px;
+  cursor: pointer;
+}
+
+label[for="selectionTranslate"] {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+label[for="selectionTranslate"]:hover {
+  color: #1a73e8;
+}
+
 /* 푸터 */
 footer {
   text-align: center;

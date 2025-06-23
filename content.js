@@ -444,9 +444,293 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ success: false });
     return true;
   }
+  
+  // 선택 번역 토글 처리
+  if (message.type === 'SELECTION_TRANSLATE_TOGGLE') {
+    selectionTranslateEnabled = message.enabled;
+    sendResponse({ success: true });
+    return true;
+  }
 });
 
-// 페이지 로드 완료 시 준비 완료 메시지 전송
-window.addEventListener('load', () => {
+// 선택 텍스트 번역 기능을 위한 변수
+let lastCtrlCTime = 0;
+let selectionTranslateEnabled = true;
+let translationTooltip = null;
+
+// 번역 툴팁 생성 함수
+function createTranslationTooltip() {
+  const tooltip = document.createElement('div');
+  tooltip.id = 'gemini-translation-tooltip';
+  tooltip.style.cssText = `
+    position: absolute;
+    z-index: 999999;
+    background-color: #1a73e8;
+    color: white;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-family: Arial, sans-serif;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+    max-width: 300px;
+    word-wrap: break-word;
+  `;
+  document.body.appendChild(tooltip);
+  return tooltip;
+}
+
+// 툴팁 위치 업데이트 함수
+function updateTooltipPosition(tooltip, selection) {
+  const range = selection.getRangeAt(0);
+  const rect = range.getBoundingClientRect();
+  
+  tooltip.style.left = `${rect.left + window.scrollX}px`;
+  tooltip.style.top = `${rect.bottom + window.scrollY + 5}px`;
+  
+  // 화면 밖으로 나가는 경우 위치 조정
+  const tooltipRect = tooltip.getBoundingClientRect();
+  if (tooltipRect.right > window.innerWidth) {
+    tooltip.style.left = `${window.innerWidth - tooltipRect.width - 10}px`;
+  }
+  if (tooltipRect.bottom > window.innerHeight) {
+    tooltip.style.top = `${rect.top + window.scrollY - tooltipRect.height - 5}px`;
+  }
+}
+
+// 선택 텍스트 번역 함수
+async function translateSelection() {
+  const selection = window.getSelection();
+  const selectedText = selection.toString().trim();
+  
+  console.log('[Gemini Translator] Selected text:', selectedText);
+  
+  if (!selectedText) {
+    console.log('[Gemini Translator] No text selected');
+    return;
+  }
+  
+  // 활성 요소 확인 (input 또는 textarea인지)
+  const activeElement = document.activeElement;
+  const isInputField = activeElement && 
+    (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA' || activeElement.contentEditable === 'true');
+  
+  console.log('[Gemini Translator] Is input field:', isInputField);
+  
+  try {
+    // 설정 가져오기
+    const settings = await chrome.runtime.sendMessage({ type: 'GET_SETTINGS' });
+    
+    // 번역 요청
+    const response = await chrome.runtime.sendMessage({
+      type: 'TRANSLATE_SELECTION',
+      text: selectedText,
+      targetLang: settings.targetLang || 'en'
+    });
+    
+    console.log('[Gemini Translator] API response:', response);
+    
+    // API 응답이 null이거나 undefined인 경우 처리
+    if (!response) {
+      console.error('[Gemini Translator] No response from API');
+      showTranslationError('API 응답이 없습니다', isInputField);
+      return;
+    }
+    
+    if (response.error) {
+      console.log('[Gemini Translator] Translation error:', response.error);
+      showTranslationError(response.error, isInputField);
+    } else if (response.translation) {
+      const translatedText = response.translation.trim();
+      console.log('[Gemini Translator] Translated text:', translatedText);
+      
+      if (!translatedText) {
+        console.warn('[Gemini Translator] Empty translation received');
+        showTranslationError('빈 번역 결과', isInputField);
+        return;
+      }
+      
+      if (isInputField) {
+        // 입력 필드에서는 텍스트를 직접 교체
+        console.log('[Gemini Translator] Replacing text in input field...');
+        replaceSelectedText(activeElement, translatedText);
+      } else {
+        // 일반 텍스트에서는 툴팁으로 표시
+        showTranslationTooltip(translatedText, selection);
+      }
+    } else {
+      console.error('[Gemini Translator] Invalid response format:', response);
+      showTranslationError('잘못된 API 응답 형식', isInputField);
+    }
+  } catch (error) {
+    console.error('[Gemini Translator] Translation error:', error);
+    
+    // Extension context invalidated 에러 처리
+    if (error.message && (error.message.includes('Extension context invalidated') || 
+                         error.message.includes('Could not establish connection'))) {
+      console.warn('[Gemini Translator] Extension needs reload');
+      if (!isInputField) {
+        // selection이 여전히 유효한지 확인
+        try {
+          if (selection && selection.rangeCount > 0) {
+            showTranslationTooltip('확장 프로그램을 새로고침해주세요', selection, '#ff9800');
+          }
+        } catch (e) {
+          console.error('[Gemini Translator] Cannot show tooltip:', e);
+        }
+      }
+    } else {
+      const errorMsg = error.message || '알 수 없는 오류';
+      showTranslationError(errorMsg, isInputField);
+    }
+  }
+}
+
+// 입력 필드에서 선택된 텍스트 교체
+function replaceSelectedText(element, newText) {
+  console.log('[Gemini Translator] replaceSelectedText called with:', {
+    element: element.tagName,
+    newText: newText,
+    selectionStart: element.selectionStart,
+    selectionEnd: element.selectionEnd,
+    currentValue: element.value
+  });
+  
+  if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') {
+    const start = element.selectionStart;
+    const end = element.selectionEnd;
+    const value = element.value;
+    
+    console.log('[Gemini Translator] Before replacement:', {
+      start, end, value,
+      selectedText: value.substring(start, end)
+    });
+    
+    // 텍스트 교체
+    const newValue = value.substring(0, start) + newText + value.substring(end);
+    element.value = newValue;
+    
+    // 커서를 번역된 텍스트 끝으로 이동
+    const newCursorPos = start + newText.length;
+    element.selectionStart = element.selectionEnd = newCursorPos;
+    
+    console.log('[Gemini Translator] After replacement:', {
+      newValue: element.value,
+      newCursorPos: newCursorPos
+    });
+    
+    // change 이벤트 발생 (React 등의 프레임워크 호환성)
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+    
+    console.log('[Gemini Translator] Text replaced in input field - COMPLETED');
+  } else if (element.contentEditable === 'true') {
+    // contentEditable 요소 처리
+    const selection = window.getSelection();
+    if (selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      console.log('[Gemini Translator] ContentEditable - selected text:', range.toString());
+      
+      range.deleteContents();
+      range.insertNode(document.createTextNode(newText));
+      
+      // 커서를 번역된 텍스트 끝으로 이동
+      range.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+    
+    console.log('[Gemini Translator] Text replaced in contentEditable element - COMPLETED');
+  }
+}
+
+// 툴팁으로 번역 결과 표시
+function showTranslationTooltip(text, selection, bgColor = '#1a73e8') {
+  // 기존 툴팁 제거
+  if (translationTooltip) {
+    translationTooltip.remove();
+  }
+  
+  // 새 툴팁 생성
+  translationTooltip = createTranslationTooltip();
+  translationTooltip.textContent = text;
+  translationTooltip.style.backgroundColor = bgColor;
+  translationTooltip.style.opacity = '1';
+  updateTooltipPosition(translationTooltip, selection);
+  
+  // 3초 후 툴팁 제거
+  setTimeout(() => {
+    if (translationTooltip) {
+      translationTooltip.style.opacity = '0';
+      setTimeout(() => {
+        translationTooltip?.remove();
+        translationTooltip = null;
+      }, 200);
+    }
+  }, 3000);
+}
+
+// 번역 오류 표시
+function showTranslationError(error, isInputField) {
+  if (!isInputField) {
+    const selection = window.getSelection();
+    showTranslationTooltip('번역 오류', selection, '#d33');
+  } else {
+    // 입력 필드에서는 콘솔에만 오류 표시
+    console.error('[Gemini Translator] Translation failed:', error);
+  }
+}
+
+// Ctrl+C+C 감지를 위한 키보드 이벤트 리스너
+document.addEventListener('keydown', async (e) => {
+  // 디버깅을 위한 로그
+  if (e.ctrlKey && e.key === 'c') {
+    console.log('[Gemini Translator] Ctrl+C pressed, enabled:', selectionTranslateEnabled);
+  }
+  
+  if (!selectionTranslateEnabled) return;
+  
+  // Ctrl+C 감지 (대소문자 모두 처리)
+  if (e.ctrlKey && (e.key === 'c' || e.key === 'C')) {
+    const currentTime = Date.now();
+    
+    // 이전 Ctrl+C와의 시간 차이가 500ms 이내면 번역 실행
+    if (currentTime - lastCtrlCTime < 500) {
+      console.log('[Gemini Translator] Double Ctrl+C detected, translating...');
+      e.preventDefault(); // 복사 동작 방지
+      await translateSelection();
+      lastCtrlCTime = 0; // 리셋
+    } else {
+      console.log('[Gemini Translator] First Ctrl+C detected');
+      lastCtrlCTime = currentTime;
+    }
+  }
+});
+
+// 클릭 시 툴팁 제거
+document.addEventListener('click', () => {
+  if (translationTooltip) {
+    translationTooltip.style.opacity = '0';
+    setTimeout(() => {
+      translationTooltip?.remove();
+      translationTooltip = null;
+    }, 200);
+  }
+});
+
+// 페이지 로드 완료 시 준비 완료 메시지 전송 및 설정 로드
+window.addEventListener('load', async () => {
   chrome.runtime.sendMessage({ type: 'CONTENT_READY' });
+  
+  // 선택 번역 설정 로드
+  try {
+    const settings = await chrome.runtime.sendMessage({ type: 'GET_SETTINGS' });
+    if (settings.selectionTranslateEnabled !== undefined) {
+      selectionTranslateEnabled = settings.selectionTranslateEnabled;
+    }
+  } catch (error) {
+    console.error('설정 로드 오류:', error);
+  }
 });

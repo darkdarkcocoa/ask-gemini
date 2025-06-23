@@ -81,22 +81,127 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     chrome.storage.sync.set({
       apiKey: message.apiKey,
       sourceLang: message.sourceLang,
-      targetLang: message.targetLang
+      targetLang: message.targetLang,
+      selectionTranslateEnabled: message.selectionTranslateEnabled
     });
     sendResponse({ success: true });
   }
   
   if (message.type === 'GET_SETTINGS') {
-    chrome.storage.sync.get(['apiKey', 'sourceLang', 'targetLang'], (data) => {
+    chrome.storage.sync.get(['apiKey', 'sourceLang', 'targetLang', 'selectionTranslateEnabled'], (data) => {
       sendResponse({
         apiKey: data.apiKey || '',
         sourceLang: data.sourceLang || 'auto',
-        targetLang: data.targetLang || 'ko'
+        targetLang: data.targetLang || 'ko',
+        selectionTranslateEnabled: data.selectionTranslateEnabled !== false // 기본값 true
       });
     });
     return true; // 비동기 응답을 위해 true 반환
   }
+  
+  // 선택 텍스트 번역 처리
+  if (message.type === 'TRANSLATE_SELECTION') {
+    handleSelectionTranslation(message, sender, sendResponse);
+    return true; // 비동기 응답을 위해 true 반환
+  }
 });
+
+// 선택 텍스트 번역 함수
+async function handleSelectionTranslation(message, sender, sendResponse) {
+  try {
+    const { text, targetLang = 'en' } = message;
+    const apiKey = await getApiKey();
+    
+    if (!apiKey) {
+      sendResponse({ error: 'API 키가 설정되지 않았습니다.' });
+      return;
+    }
+    
+    if (!text || text.trim() === '') {
+      sendResponse({ error: '번역할 텍스트가 없습니다.' });
+      return;
+    }
+    
+    // 번역 프롬프트 생성 (언어 코드를 실제 언어명으로 매핑)
+    const languageNames = {
+      'en': 'English',
+      'ko': 'Korean',
+      'ja': 'Japanese', 
+      'zh': 'Chinese',
+      'fr': 'French',
+      'de': 'German',
+      'es': 'Spanish',
+      'ru': 'Russian'
+    };
+    
+    const targetLanguageName = languageNames[targetLang] || 'English';
+    
+    const prompt = `You are a professional translator. Translate the following text from any language to ${targetLanguageName}.
+
+IMPORTANT RULES:
+- You MUST translate the text, do not return the original text
+- Return ONLY the translated text, no explanations or additional content
+- If the text is already in ${targetLanguageName}, translate it to a different language that makes sense
+- Maintain the original meaning and tone
+
+Text to translate: "${text}"
+
+Translation:`;
+    
+    console.log('Selection translation prompt:', prompt);
+    
+    // Gemini API 호출
+    const response = await fetch(`${ENDPOINT}?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.1,
+          topP: 0.9,
+          topK: 20,
+          maxOutputTokens: 1000
+        }
+      })
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Selection translation API error:', errorText);
+      throw new Error(`Gemini API 오류: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    // 응답에서 번역된 텍스트 추출
+    let translation = '';
+    try {
+      if (data && data.candidates && Array.isArray(data.candidates) && data.candidates.length > 0) {
+        const candidate = data.candidates[0];
+        if (candidate && candidate.content && candidate.content.parts && Array.isArray(candidate.content.parts)) {
+          const part = candidate.content.parts[0];
+          if (part && typeof part.text === 'string') {
+            translation = part.text.trim();
+          }
+        }
+      }
+      
+      if (!translation) {
+        console.error('Empty translation result from API:', data);
+        throw new Error('번역 결과가 비어있습니다.');
+      }
+      
+      console.log('Selection translation successful:', translation);
+      sendResponse({ translation });
+    } catch (parseError) {
+      console.error('Error parsing API response:', parseError, data);
+      throw new Error('API 응답 파싱 오류: ' + parseError.message);
+    }
+  } catch (error) {
+    console.error('Selection translation error:', error);
+    sendResponse({ error: error.message });
+  }
+}
 
 // 번역 처리 함수
 async function handleTranslation(message, sender, sendResponse) {

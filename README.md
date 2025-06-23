@@ -9,6 +9,7 @@
 - 🔄 **Original/Translation Toggle**: Switch between translated text and original content
 - 📱 **Dynamic Content Support**: Automatically detects and translates content loaded via SPA frameworks or AJAX
 - 📊 **Progressive Translation**: Displays a progress bar and translates content in chunks for better UX
+- ✏️ **Quick Selection Translation**: Select any text and press Ctrl+C twice to instantly translate it
 - ⚙️ **User Settings**: Configure source language, target language, and your Gemini API key
 
 ## 🚀 Installation
@@ -26,11 +27,19 @@
 
 ## 📖 Usage
 
+### Full Page Translation
 1. After installation, click the extension icon in the Chrome toolbar
 2. Enter your Gemini API key (You can get one from [Google AI Studio](https://makersuite.google.com/app/apikey))
 3. Select source language and target language (Default: Auto-detect → English)
 4. Click "Translate Page" to translate the current page's text
 5. Use "Toggle Original/Translation" to switch between original and translated content
+
+### Quick Selection Translation
+1. Select any text on a webpage
+2. Press Ctrl+C twice quickly (within 500ms)
+3. A tooltip will appear with the translation
+4. Click anywhere to dismiss the tooltip
+5. You can enable/disable this feature in the extension popup
 
 ## 🔧 Technical Details
 
