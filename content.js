@@ -125,6 +125,12 @@ async function translatePage() {
     return { success: false, error: 'Translation not allowed in iframe' };
   }
   
+  // 확장 프로그램 활성화 상태 확인
+  if (!extensionEnabled) {
+    console.log('[Gemini Translator] Translation blocked: extension is disabled');
+    return { success: false, error: 'Extension disabled' };
+  }
+  
   // 이미 번역 중이면 중복 실행 방지
   if (translationState.inProgress) {
     return { success: true };
@@ -148,6 +154,16 @@ async function translatePage() {
     
     // 설정 가져오기
     const settings = await chrome.runtime.sendMessage({ type: 'GET_SETTINGS' });
+    
+    // 확장 프로그램 상태 업데이트
+    extensionEnabled = settings.extensionEnabled !== false;
+    
+    // 다시 한번 확인
+    if (!extensionEnabled) {
+      console.log('[Gemini Translator] Translation blocked: extension disabled in settings');
+      translationState.inProgress = false;
+      return { success: false, error: 'Extension disabled' };
+    }
     
     // 텍스트 노드 수집
     const textInfo = collectTextNodes(document.body);
@@ -564,11 +580,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ success: true });
     return true;
   }
+  
+  // 확장 프로그램 활성화 토글 처리
+  if (message.type === 'EXTENSION_ENABLED_TOGGLE') {
+    extensionEnabled = message.enabled;
+    console.log('[Gemini Translator] Extension enabled changed:', extensionEnabled);
+    sendResponse({ success: true });
+    return true;
+  }
 });
 
 // 선택 텍스트 번역 기능을 위한 변수
 let lastCtrlCTime = 0;
 let selectionTranslateEnabled = true;
+let extensionEnabled = true; // 확장 프로그램 활성화 상태
 let translationTooltip = null;
 let isTranslating = false; // 번역 중복 방지 플래그
 
@@ -625,6 +650,12 @@ function updateTooltipPosition(tooltip, selection) {
 async function translateSelection() {
   console.log('[Gemini Translator] ========== translateSelection() STARTED ==========');
   
+  // 확장 프로그램 활성화 상태 확인
+  if (!extensionEnabled) {
+    console.log('[Gemini Translator] Selection translation blocked: extension is disabled');
+    return;
+  }
+  
   const selection = window.getSelection();
   const selectedText = selection.toString().trim();
   
@@ -645,6 +676,15 @@ async function translateSelection() {
   try {
     // 설정 가져오기
     const settings = await chrome.runtime.sendMessage({ type: 'GET_SETTINGS' });
+    
+    // 확장 프로그램 상태 업데이트
+    extensionEnabled = settings.extensionEnabled !== false;
+    
+    // 다시 한번 확인
+    if (!extensionEnabled) {
+      console.log('[Gemini Translator] Selection translation blocked: extension disabled in settings');
+      return;
+    }
     
     // 번역 요청
     const response = await chrome.runtime.sendMessage({
@@ -811,24 +851,28 @@ function showTranslationError(error, isInputField) {
 const handleKeydown = async (e) => {
   // Ctrl+C 감지 (대소문자 모두 처리) - 다른 키는 무시
   if (e.ctrlKey && (e.key === 'c' || e.key === 'C')) {
-    // 텍스트가 선택되어 있는지 먼저 확인
+    console.log('[Gemini Translator] Ctrl+C pressed, extensionEnabled:', extensionEnabled, 'selectionTranslateEnabled:', selectionTranslateEnabled);
+    
+    // 확장 프로그램이나 선택 번역이 비활성화된 경우 아무것도 하지 않음
+    if (!extensionEnabled || !selectionTranslateEnabled) {
+      console.log('[Gemini Translator] Extension or selection translate disabled, ignoring');
+      return; // 정상적인 복사 동작 허용
+    }
+    
+    // 텍스트가 선택되어 있는지 확인
     const selectedText = window.getSelection().toString().trim();
-    
-    console.log('[Gemini Translator] Ctrl+C pressed, enabled:', selectionTranslateEnabled);
     console.log('[Gemini Translator] Selected text:', selectedText ? `"${selectedText}"` : 'none');
-    
-    if (!selectionTranslateEnabled) return;
     
     // 선택된 텍스트가 없으면 처리하지 않음
     if (!selectedText) {
       console.log('[Gemini Translator] No text selected, ignoring Ctrl+C');
-      return;
+      return; // 정상적인 복사 동작 허용
     }
     
     const currentTime = Date.now();
     
-    // 이전 Ctrl+C와의 시간 차이가 500ms 이내면 번역 실행
-    if (currentTime - lastCtrlCTime < 500) {
+    // 이전 Ctrl+C와의 시간 차이가 500ms 이내이고, 이전 시간이 기록되어 있으면 번역 실행
+    if (lastCtrlCTime > 0 && currentTime - lastCtrlCTime < 500) {
       // 이미 번역 중이면 무시
       if (isTranslating) {
         console.log('[Gemini Translator] Translation already in progress, ignoring...');
@@ -853,18 +897,19 @@ const handleKeydown = async (e) => {
       
       lastCtrlCTime = 0; // 리셋
     } else {
-      console.log('[Gemini Translator] First Ctrl+C detected');
+      console.log('[Gemini Translator] First Ctrl+C detected - allowing normal copy');
       lastCtrlCTime = currentTime;
+      // 첫 번째 Ctrl+C는 정상적인 복사 동작을 허용 (preventDefault 하지 않음)
+      // return을 사용하지 않고 그냥 통과시킴
     }
   }
 };
 
-// 여러 레벨에서 이벤트 캡처
+// 이벤트 리스너 등록
 console.log('[Gemini Translator] Registering event listeners...');
 
-// 기본 이벤트 리스너들 (capture 단계가 우선)
-document.addEventListener('keydown', handleKeydown, true);
-window.addEventListener('keydown', handleKeydown, true);
+// 일반 단계에서 이벤트 리스너 등록 (capture=false로 변경)
+document.addEventListener('keydown', handleKeydown, false);
 
 console.log('[Gemini Translator] Event listeners registered successfully');
 
@@ -893,11 +938,16 @@ const initializeExtension = async () => {
   
   chrome.runtime.sendMessage({ type: 'CONTENT_READY' });
   
-  // 선택 번역 설정 로드
+  // 확장 프로그램 설정 로드
   try {
     const settings = await chrome.runtime.sendMessage({ type: 'GET_SETTINGS' });
     if (settings.selectionTranslateEnabled !== undefined) {
       selectionTranslateEnabled = settings.selectionTranslateEnabled;
+    }
+    if (settings.extensionEnabled !== undefined) {
+      extensionEnabled = settings.extensionEnabled;
+    } else {
+      extensionEnabled = true; // 기본값
     }
     console.log('[Gemini Translator] Settings loaded:', settings);
   } catch (error) {

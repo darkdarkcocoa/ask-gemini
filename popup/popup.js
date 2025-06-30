@@ -8,6 +8,7 @@ const translateBtn = document.getElementById('translateBtn');
 const toggleBtn = document.getElementById('toggleBtn');
 const statusArea = document.getElementById('statusArea');
 const selectionTranslateCheckbox = document.getElementById('selectionTranslate');
+const extensionEnabledCheckbox = document.getElementById('extensionEnabled');
 
 // 상태 표시 함수
 function showStatus(message, type = 'info') {
@@ -63,6 +64,12 @@ async function loadSettings() {
     if (settings.selectionTranslateEnabled !== undefined) {
       selectionTranslateCheckbox.checked = settings.selectionTranslateEnabled;
     }
+    
+    if (settings.extensionEnabled !== undefined) {
+      extensionEnabledCheckbox.checked = settings.extensionEnabled;
+    } else {
+      extensionEnabledCheckbox.checked = true; // 기본값은 활성화
+    }
   } catch (error) {
     console.error('Settings load error:', error);
     showStatus(getText('translationError'), 'error');
@@ -77,7 +84,8 @@ async function saveSettings() {
       apiKey: apiKeyInput.value.trim(),
       sourceLang: sourceLangSelect.value,
       targetLang: targetLangSelect.value,
-      selectionTranslateEnabled: selectionTranslateCheckbox.checked
+      selectionTranslateEnabled: selectionTranslateCheckbox.checked,
+      extensionEnabled: extensionEnabledCheckbox.checked
     });
     
     showStatus(getText('settingsSaved'), 'success');
@@ -96,6 +104,12 @@ async function getCurrentTab() {
 // 페이지 번역 요청
 async function translatePage() {
   try {
+    // 확장 프로그램 활성화 상태 확인
+    if (!extensionEnabledCheckbox.checked) {
+      showStatus('Translation extension is disabled', 'error');
+      return;
+    }
+    
     // API 키 확인
     if (!apiKeyInput.value.trim()) {
       showStatus(getText('apiKeyRequired'), 'error');
@@ -176,6 +190,22 @@ selectionTranslateCheckbox.addEventListener('change', async () => {
       chrome.tabs.sendMessage(tab.id, {
         type: 'SELECTION_TRANSLATE_TOGGLE',
         enabled: selectionTranslateCheckbox.checked
+      });
+    }
+  } catch (error) {
+    console.error('Settings transfer error:', error);
+  }
+});
+
+extensionEnabledCheckbox.addEventListener('change', async () => {
+  await saveSettings();
+  // 현재 탭의 content script에 확장 프로그램 활성화 상태 알림
+  try {
+    const tab = await getCurrentTab();
+    if (tab && tab.id) {
+      chrome.tabs.sendMessage(tab.id, {
+        type: 'EXTENSION_ENABLED_TOGGLE',
+        enabled: extensionEnabledCheckbox.checked
       });
     }
   } catch (error) {

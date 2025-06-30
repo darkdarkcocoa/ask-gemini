@@ -82,18 +82,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       apiKey: message.apiKey,
       sourceLang: message.sourceLang,
       targetLang: message.targetLang,
-      selectionTranslateEnabled: message.selectionTranslateEnabled
+      selectionTranslateEnabled: message.selectionTranslateEnabled,
+      extensionEnabled: message.extensionEnabled
     });
     sendResponse({ success: true });
   }
   
   if (message.type === 'GET_SETTINGS') {
-    chrome.storage.sync.get(['apiKey', 'sourceLang', 'targetLang', 'selectionTranslateEnabled'], (data) => {
+    chrome.storage.sync.get(['apiKey', 'sourceLang', 'targetLang', 'selectionTranslateEnabled', 'extensionEnabled'], (data) => {
       sendResponse({
         apiKey: data.apiKey || '',
         sourceLang: data.sourceLang || 'auto',
         targetLang: data.targetLang || 'ko',
-        selectionTranslateEnabled: data.selectionTranslateEnabled !== false // 기본값 true
+        selectionTranslateEnabled: data.selectionTranslateEnabled !== false, // 기본값 true
+        extensionEnabled: data.extensionEnabled !== false // 기본값 true
       });
     });
     return true; // 비동기 응답을 위해 true 반환
