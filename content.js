@@ -513,6 +513,8 @@ function updateTooltipPosition(tooltip, selection) {
 
 // 선택 텍스트 번역 함수
 async function translateSelection() {
+  console.log('[Gemini Translator] ========== translateSelection() STARTED ==========');
+  
   const selection = window.getSelection();
   const selectedText = selection.toString().trim();
   
@@ -697,22 +699,22 @@ function showTranslationError(error, isInputField) {
 // Ctrl+C+C 감지를 위한 키보드 이벤트 리스너 (capture 단계에서 실행하여 구글의 이벤트 핸들러보다 우선)
 // 다중 레벨에서 이벤트 캡처하여 더 확실하게 처리
 const handleKeydown = async (e) => {
-  // 모든 키 입력을 로그로 확인 (디버깅용)
-  if (e.ctrlKey) {
-    console.log('[Gemini Translator] Ctrl key detected with:', e.key, 'on element:', e.target.tagName);
-  }
-  
-  // 디버깅을 위한 로그
-  if (e.ctrlKey && e.key === 'c') {
-    console.log('[Gemini Translator] Ctrl+C pressed, enabled:', selectionTranslateEnabled);
-    console.log('[Gemini Translator] Current selection:', window.getSelection().toString());
-    console.log('[Gemini Translator] Active element:', document.activeElement?.tagName);
-  }
-  
-  if (!selectionTranslateEnabled) return;
-  
-  // Ctrl+C 감지 (대소문자 모두 처리)
+  // Ctrl+C 감지 (대소문자 모두 처리) - 다른 키는 무시
   if (e.ctrlKey && (e.key === 'c' || e.key === 'C')) {
+    // 텍스트가 선택되어 있는지 먼저 확인
+    const selectedText = window.getSelection().toString().trim();
+    
+    console.log('[Gemini Translator] Ctrl+C pressed, enabled:', selectionTranslateEnabled);
+    console.log('[Gemini Translator] Selected text:', selectedText ? `"${selectedText}"` : 'none');
+    
+    if (!selectionTranslateEnabled) return;
+    
+    // 선택된 텍스트가 없으면 처리하지 않음
+    if (!selectedText) {
+      console.log('[Gemini Translator] No text selected, ignoring Ctrl+C');
+      return;
+    }
+    
     const currentTime = Date.now();
     
     // 이전 Ctrl+C와의 시간 차이가 500ms 이내면 번역 실행
@@ -721,7 +723,14 @@ const handleKeydown = async (e) => {
       e.preventDefault(); // 복사 동작 방지
       e.stopPropagation(); // 이벤트 전파 차단
       e.stopImmediatePropagation(); // 다른 핸들러 실행 차단
-      await translateSelection();
+      
+      try {
+        await translateSelection();
+        console.log('[Gemini Translator] Translation completed');
+      } catch (error) {
+        console.error('[Gemini Translator] Translation failed:', error);
+      }
+      
       lastCtrlCTime = 0; // 리셋
     } else {
       console.log('[Gemini Translator] First Ctrl+C detected');
@@ -733,24 +742,9 @@ const handleKeydown = async (e) => {
 // 여러 레벨에서 이벤트 캡처
 console.log('[Gemini Translator] Registering event listeners...');
 
-// 기본 이벤트 리스너들
+// 기본 이벤트 리스너들 (capture 단계가 우선)
 document.addEventListener('keydown', handleKeydown, true);
 window.addEventListener('keydown', handleKeydown, true);
-
-// iframe 전용 추가 이벤트 리스너 (더 높은 우선순위)
-document.addEventListener('keydown', handleKeydown, false); // bubble 단계에서도 캐치
-window.addEventListener('keydown', handleKeydown, false);
-
-// 모든 가능한 요소에 직접 이벤트 리스너 추가
-setTimeout(() => {
-  // 검색창 직접 캐치
-  const searchInputs = document.querySelectorAll('input[name="q"], input[type="search"], textarea');
-  searchInputs.forEach((input, index) => {
-    console.log(`[Gemini Translator] Adding direct listener to input ${index}:`, input.tagName);
-    input.addEventListener('keydown', handleKeydown, true);
-    input.addEventListener('keydown', handleKeydown, false);
-  });
-}, 1000);
 
 console.log('[Gemini Translator] Event listeners registered successfully');
 
