@@ -701,9 +701,6 @@ function showTranslationError(error, isInputField) {
 // Ctrl+C+C 감지를 위한 키보드 이벤트 리스너 (capture 단계에서 실행하여 구글의 이벤트 핸들러보다 우선)
 // 다중 레벨에서 이벤트 캡처하여 더 확실하게 처리
 const handleKeydown = async (e) => {
-  // 모든 키보드 이벤트 로그 (테스트용)
-  console.log('[Gemini Translator] Key pressed:', e.key, 'Ctrl:', e.ctrlKey, 'Target:', e.target.tagName);
-  
   // Ctrl+C 감지 (대소문자 모두 처리) - 다른 키는 무시
   if (e.ctrlKey && (e.key === 'c' || e.key === 'C')) {
     // 텍스트가 선택되어 있는지 먼저 확인
