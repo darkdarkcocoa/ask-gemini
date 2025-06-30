@@ -462,11 +462,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 let lastCtrlCTime = 0;
 let selectionTranslateEnabled = true;
 let translationTooltip = null;
+let isTranslating = false; // 번역 중복 방지 플래그
 
 console.log('[Gemini Translator] Selection translation variables initialized:', {
   lastCtrlCTime,
   selectionTranslateEnabled,
-  translationTooltip
+  translationTooltip,
+  isTranslating
 });
 
 // 번역 툴팁 생성 함수
@@ -719,16 +721,26 @@ const handleKeydown = async (e) => {
     
     // 이전 Ctrl+C와의 시간 차이가 500ms 이내면 번역 실행
     if (currentTime - lastCtrlCTime < 500) {
+      // 이미 번역 중이면 무시
+      if (isTranslating) {
+        console.log('[Gemini Translator] Translation already in progress, ignoring...');
+        return;
+      }
+      
       console.log('[Gemini Translator] Double Ctrl+C detected, translating...');
       e.preventDefault(); // 복사 동작 방지
       e.stopPropagation(); // 이벤트 전파 차단
       e.stopImmediatePropagation(); // 다른 핸들러 실행 차단
+      
+      isTranslating = true; // 번역 시작 플래그 설정
       
       try {
         await translateSelection();
         console.log('[Gemini Translator] Translation completed');
       } catch (error) {
         console.error('[Gemini Translator] Translation failed:', error);
+      } finally {
+        isTranslating = false; // 번역 완료 후 플래그 해제
       }
       
       lastCtrlCTime = 0; // 리셋
@@ -747,12 +759,6 @@ document.addEventListener('keydown', handleKeydown, true);
 window.addEventListener('keydown', handleKeydown, true);
 
 console.log('[Gemini Translator] Event listeners registered successfully');
-
-// DOM이 완전히 로드된 후에도 한 번 더 등록 (구글의 동적 스크립트 대응)
-document.addEventListener('DOMContentLoaded', () => {
-  document.addEventListener('keydown', handleKeydown, true);
-  window.addEventListener('keydown', handleKeydown, true);
-});
 
 // 클릭 시 툴팁 제거
 document.addEventListener('click', () => {
