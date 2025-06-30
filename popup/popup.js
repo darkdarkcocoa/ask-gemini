@@ -3,6 +3,7 @@ const apiKeyInput = document.getElementById('apiKey');
 const toggleApiKeyBtn = document.getElementById('toggleApiKey');
 const sourceLangSelect = document.getElementById('sourceLang');
 const targetLangSelect = document.getElementById('targetLang');
+const uiLanguageSelect = document.getElementById('uiLanguage');
 const translateBtn = document.getElementById('translateBtn');
 const toggleBtn = document.getElementById('toggleBtn');
 const statusArea = document.getElementById('statusArea');
@@ -30,9 +31,21 @@ function showStatus(message, type = 'info') {
   }
 }
 
+// UI 언어 변경 처리
+function handleUILanguageChange() {
+  const selectedLang = uiLanguageSelect.value;
+  setUILanguage(selectedLang);
+  updateUI();
+}
+
 // 설정 로드
 async function loadSettings() {
   try {
+    // UI 언어 먼저 로드하고 적용
+    const uiLang = getCurrentUILanguage();
+    uiLanguageSelect.value = uiLang;
+    updateUI();
+    
     const settings = await chrome.runtime.sendMessage({ type: 'GET_SETTINGS' });
     
     if (settings.apiKey) {
@@ -51,8 +64,8 @@ async function loadSettings() {
       selectionTranslateCheckbox.checked = settings.selectionTranslateEnabled;
     }
   } catch (error) {
-    console.error('설정 로드 오류:', error);
-    showStatus('설정을 로드하는 중 오류가 발생했습니다.', 'error');
+    console.error('Settings load error:', error);
+    showStatus(getText('translationError'), 'error');
   }
 }
 
@@ -67,10 +80,10 @@ async function saveSettings() {
       selectionTranslateEnabled: selectionTranslateCheckbox.checked
     });
     
-    showStatus('설정이 저장되었습니다.', 'success');
+    showStatus(getText('settingsSaved'), 'success');
   } catch (error) {
-    console.error('설정 저장 오류:', error);
-    showStatus('설정을 저장하는 중 오류가 발생했습니다.', 'error');
+    console.error('Settings save error:', error);
+    showStatus(getText('translationError'), 'error');
   }
 }
 
@@ -85,7 +98,7 @@ async function translatePage() {
   try {
     // API 키 확인
     if (!apiKeyInput.value.trim()) {
-      showStatus('Gemini API 키를 입력해주세요.', 'error');
+      showStatus(getText('apiKeyRequired'), 'error');
       return;
     }
     
@@ -96,7 +109,7 @@ async function translatePage() {
     const tab = await getCurrentTab();
     
     // 번역 요청
-    showStatus('페이지 번역 중...', 'info');
+    showStatus(getText('translating'), 'info');
     
     // 번역 요청을 보내고 응답 대기
     const response = await chrome.tabs.sendMessage(tab.id, { 
@@ -106,11 +119,11 @@ async function translatePage() {
     
     // 실제 번역이 완료된 후에만 성공 메시지 표시
     if (response && response.translationComplete) {
-      showStatus('페이지 번역이 완료되었습니다.', 'success');
+      showStatus(getText('translationComplete'), 'success');
     }
   } catch (error) {
-    console.error('번역 요청 오류:', error);
-    showStatus('번역 요청 중 오류가 발생했습니다.', 'error');
+    console.error('Translation request error:', error);
+    showStatus(getText('translationError'), 'error');
   }
 }
 
@@ -120,8 +133,8 @@ async function toggleTranslation() {
     const tab = await getCurrentTab();
     await chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_TRANSLATION' });
   } catch (error) {
-    console.error('번역 토글 오류:', error);
-    showStatus('번역 토글 중 오류가 발생했습니다.', 'error');
+    console.error('Translation toggle error:', error);
+    showStatus(getText('translationError'), 'error');
   }
 }
 
@@ -139,7 +152,7 @@ function toggleApiKeyVisibility() {
 // 완료 메시지 수신 처리 리스너 추가
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'TRANSLATION_COMPLETE') {
-    showStatus('페이지 번역이 완료되었습니다.', 'success');
+    showStatus(getText('translationComplete'), 'success');
   }
 });
 
@@ -148,6 +161,7 @@ document.addEventListener('DOMContentLoaded', loadSettings);
 translateBtn.addEventListener('click', translatePage);
 toggleBtn.addEventListener('click', toggleTranslation);
 toggleApiKeyBtn.addEventListener('click', toggleApiKeyVisibility);
+uiLanguageSelect.addEventListener('change', handleUILanguageChange);
 
 // 설정 변경 시 자동 저장
 apiKeyInput.addEventListener('blur', saveSettings);
@@ -165,6 +179,6 @@ selectionTranslateCheckbox.addEventListener('change', async () => {
       });
     }
   } catch (error) {
-    console.error('설정 전달 오류:', error);
+    console.error('Settings transfer error:', error);
   }
 });

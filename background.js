@@ -8,7 +8,7 @@ async function getApiKey() {
 }
 
 // 세그먼트를 청크로 나누기
-function chunkSegments(segments, maxChunkSize = 2000) { // 청크 크기를 2KB로 줄임
+function chunkSegments(segments, maxChunkSize = 8000) { // 청크 크기를 8KB로 증가 (API 호출 감소)
   const chunks = [];
   let currentChunk = [];
   let currentSize = 0;

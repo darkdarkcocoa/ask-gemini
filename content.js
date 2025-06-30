@@ -119,6 +119,12 @@ let translationState = {
 
 // 페이지 번역 함수
 async function translatePage() {
+  // iframe 내부에서는 번역 실행 방지
+  if (window !== window.top) {
+    console.log('[Gemini Translator] Translation blocked: running inside iframe');
+    return { success: false, error: 'Translation not allowed in iframe' };
+  }
+  
   // 이미 번역 중이면 중복 실행 방지
   if (translationState.inProgress) {
     return { success: true };
@@ -133,6 +139,13 @@ async function translatePage() {
   translationState.inProgress = true;
   
   try {
+    // 번역 마커 정리 - 기존 번역 마커 제거
+    const existingMarkers = document.querySelectorAll('[data-translated="true"]');
+    existingMarkers.forEach(element => {
+      element.removeAttribute('data-translated');
+    });
+    console.log(`[Gemini Translator] Cleaned up ${existingMarkers.length} existing translation markers`);
+    
     // 설정 가져오기
     const settings = await chrome.runtime.sendMessage({ type: 'GET_SETTINGS' });
     
@@ -191,6 +204,12 @@ function collectTextNodes(root) {
     NodeFilter.SHOW_TEXT,
     {
       acceptNode: function(node) {
+        // 이미 번역된 노드 제외
+        const parent = node.parentElement;
+        if (parent && parent.hasAttribute('data-translated')) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        
         // 의미 있는 텍스트만 수집 (공백, 스크립트, 스타일 제외)
         if (node.nodeValue.trim() && 
             !isInvisibleNode(node) &&
@@ -210,42 +229,71 @@ function collectTextNodes(root) {
       nodes.push(node);
       // 원본 텍스트 저장
       originalMap.set(node, node.nodeValue);
+      // 부모 노드에 번역 마커 추가
+      if (node.parentElement) {
+        node.parentElement.setAttribute('data-translated', 'true');
+      }
     }
   }
   
   return { texts, nodes };
 }
 
-// 번역 결과 적용 함수
-function applyTranslations(nodes, translations) {
-  if (!nodes || !translations || nodes.length !== translations.length) {
-    console.error('노드와 번역 결과 수가 일치하지 않습니다:', nodes?.length, translations?.length);
+// 안전한 번역 결과 적용 함수
+function applyTranslationsSafely(nodes, translations) {
+  if (!nodes || !translations) {
+    console.warn('노드 또는 번역 결과가 없습니다.');
     return;
+  }
+  
+  // 노드 수와 번역 결과 수가 일치하지 않는 경우 안전하게 처리
+  const minLength = Math.min(nodes.length, translations.length);
+  
+  if (nodes.length !== translations.length) {
+    console.warn(`노드 수(${nodes.length})와 번역 결과 수(${translations.length})가 일치하지 않습니다. ${minLength}개만 처리합니다.`);
   }
   
   // 번역 적용 시 부분적으로 화면 업데이트 위해 지연 추가
   const batchSize = 50; // 한 번에 처리할 노드 수
   
   // 노드를 나누어 일괄 처리
-  for (let i = 0; i < nodes.length; i += batchSize) {
+  for (let i = 0; i < minLength; i += batchSize) {
     const batch = nodes.slice(i, i + batchSize);
     const batchTranslations = translations.slice(i, i + batchSize);
     
     // 비동기로 다음 배치 처리
     setTimeout(() => {
       batch.forEach((node, idx) => {
-        if (batchTranslations[idx]) {
-          node.nodeValue = batchTranslations[idx];
+        if (node && batchTranslations[idx] && node.nodeValue !== batchTranslations[idx]) {
+          try {
+            node.nodeValue = batchTranslations[idx];
+          } catch (error) {
+            console.warn('노드 업데이트 실패:', error);
+          }
         }
       });
     }, 0);
   }
 }
 
+// 기존 번역 결과 적용 함수 (기존 호환성 유지)
+function applyTranslations(nodes, translations) {
+  return applyTranslationsSafely(nodes, translations);
+}
+
 // 번역 토글 함수
 function toggleTranslation() {
   if (!translationState.completed) {
     return;
+  }
+  
+  // 번역 마커 상태 관리
+  if (isTranslated) {
+    // 번역 해제 시 모든 마커 제거
+    const existingMarkers = document.querySelectorAll('[data-translated="true"]');
+    existingMarkers.forEach(element => {
+      element.removeAttribute('data-translated');
+    });
   }
   
   for (const [node, stored] of originalMap.entries()) {
@@ -270,22 +318,61 @@ function isInvisibleNode(node) {
          style.opacity === '0';
 }
 
-// 스크립트나 스타일 태그 내부인지 확인
+// 스크립트나 스타일 태그 내부인지 확인 (네이버 특화 필터링 추가)
 function isInScriptOrStyle(node) {
   let parent = node.parentNode;
-  while (parent) {
+  while (parent && parent.nodeName !== 'BODY') {
+    // 기본 제외 태그들
     if (parent.nodeName === 'SCRIPT' || 
         parent.nodeName === 'STYLE' || 
-        parent.nodeName === 'NOSCRIPT') {
+        parent.nodeName === 'NOSCRIPT' ||
+        parent.nodeName === 'CODE' ||
+        parent.nodeName === 'PRE' ||
+        parent.nodeName === 'SVG') {
       return true;
     }
+    
+    // 요소 타입 체크 및 속성 기반 필터링
+    if (parent.nodeType === Node.ELEMENT_NODE) {
+      // contenteditable 속성이 있는 요소 제외
+      if (parent.hasAttribute && parent.hasAttribute('contenteditable')) {
+        return true;
+      }
+      
+      // 네이버 특화 제외 클래스/ID 패턴
+      const className = parent.className || '';
+      const id = parent.id || '';
+      
+      // 광고, 네비게이션, 메타데이터 관련 클래스/ID 제외
+      if (className.includes('nav') || className.includes('menu') || 
+          className.includes('header') || className.includes('footer') ||
+          className.includes('aside') || className.includes('gnb') ||
+          className.includes('lnb') || className.includes('shortcut') ||
+          className.includes('service_area') || className.includes('copyright') ||
+          id.includes('nav') || id.includes('menu') || 
+          id.includes('header') || id.includes('footer')) {
+        return true;
+      }
+      
+      // data-module 속성 체크 (네이버 모듈 시스템)
+      const dataModule = parent.getAttribute && parent.getAttribute('data-module');
+      if (dataModule && (dataModule.includes('nav') || dataModule.includes('menu'))) {
+        return true;
+      }
+    }
+    
     parent = parent.parentNode;
   }
   return false;
 }
 
-// 동적 콘텐츠 감시 시작
+// 동적 콘텐츠 감시 시작 (현재 비활성화됨 - API 호출 과다 방지)
 function startObserving() {
+  // 동적 콘텐츠 번역 기능을 일시적으로 비활성화
+  // 네이버 같은 사이트에서 과도한 API 호출을 방지하기 위함
+  console.log('[Gemini Translator] MutationObserver가 비활성화되었습니다. (API 호출 과다 방지)');
+  return;
+  
   // 이미 MutationObserver가 설정되어 있으면 중복 설정 방지
   if (window._translationObserver) {
     return;
@@ -296,65 +383,86 @@ function startObserving() {
   
   // MutationObserver 설정
   const observer = new MutationObserver((mutations) => {
-    // 의미 있는 변경이 있는지 확인
-    const hasRelevantChanges = mutations.some(mutation => 
-      mutation.type === 'childList' && mutation.addedNodes.length > 0
-    );
-    
-    if (!hasRelevantChanges || !isTranslated) {
+    // 번역되지 않은 상태에서는 무시
+    if (!isTranslated) {
       return;
     }
     
-    // 디바운스 처리 (500ms)
+    // 텍스트 노드 변화만 감지하고 중복 처리 방지
+    const relevantMutations = mutations.filter(mutation => 
+      mutation.type === 'childList' && 
+      mutation.addedNodes.length > 0 &&
+      Array.from(mutation.addedNodes).some(node => 
+        node.nodeType === Node.ELEMENT_NODE && 
+        !node.hasAttribute('data-translated')
+      )
+    );
+    
+    if (relevantMutations.length === 0) {
+      return;
+    }
+    
+    // 디바운스 처리 (1초로 증가)
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(async () => {
       try {
-        // 새로 추가된 노드 수집
-        const addedNodes = [];
-        mutations.forEach(mutation => {
-          if (mutation.type === 'childList') {
-            mutation.addedNodes.forEach(node => {
-              if (node.nodeType === Node.ELEMENT_NODE) {
-                addedNodes.push(node);
-              }
-            });
-          }
+        // 새로 추가된 노드들을 모두 수집
+        const allNewNodes = [];
+        relevantMutations.forEach(mutation => {
+          mutation.addedNodes.forEach(node => {
+            if (node.nodeType === Node.ELEMENT_NODE && !node.hasAttribute('data-translated')) {
+              allNewNodes.push(node);
+            }
+          });
         });
         
-        if (addedNodes.length === 0) {
+        if (allNewNodes.length === 0) {
+          return;
+        }
+        
+        // 모든 새 노드에서 텍스트 수집 (한번에)
+        const allTexts = [];
+        const allNodes = [];
+        
+        allNewNodes.forEach(node => {
+          const textInfo = collectTextNodes(node);
+          allTexts.push(...textInfo.texts);
+          allNodes.push(...textInfo.nodes);
+          // 처리 완료 마킹
+          node.setAttribute('data-translated', 'true');
+        });
+        
+        if (allTexts.length === 0) {
           return;
         }
         
         // 설정 가져오기
         const settings = await chrome.runtime.sendMessage({ type: 'GET_SETTINGS' });
         
-        // 각 추가된 노드에 대해 번역 처리
-        for (const node of addedNodes) {
-          const textInfo = collectTextNodes(node);
-          
-          if (textInfo.texts.length === 0) {
-            continue;
-          }
-          
-          // 번역 요청
-          const response = await chrome.runtime.sendMessage({
-            type: 'TRANSLATE',
-            segments: textInfo.texts,
-            targetLang: settings.targetLang || 'ko'
-          });
-          
-          if (response.error) {
-            console.error('동적 콘텐츠 번역 오류:', response.error);
-            continue;
-          }
-          
-          // 번역 결과 적용
-          applyTranslations(textInfo.nodes, response.translations);
+        // 한번에 모든 텍스트 번역 요청
+        const response = await chrome.runtime.sendMessage({
+          type: 'TRANSLATE',
+          segments: allTexts,
+          targetLang: settings.targetLang || 'ko'
+        });
+        
+        if (response.error) {
+          console.error('동적 콘텐츠 번역 오류:', response.error);
+          return;
         }
+        
+        // 번역 결과가 없는 경우 무시
+        if (!response.translations || response.translations.length === 0) {
+          return;
+        }
+        
+        // 번역 결과 적용 (안전하게)
+        applyTranslationsSafely(allNodes, response.translations);
+        
       } catch (error) {
         console.error('동적 콘텐츠 번역 처리 오류:', error);
       }
-    }, 500);
+    }, 1000); // 1초로 증가
   });
   
   // 문서 전체 감시 설정
