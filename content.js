@@ -766,7 +766,17 @@ document.addEventListener('click', () => {
 });
 
 // 페이지 로드 완료 시 준비 완료 메시지 전송 및 설정 로드
+let isInitialized = false; // 중복 초기화 방지
+
 const initializeExtension = async () => {
+  if (isInitialized) {
+    console.log('[Gemini Translator] Already initialized, skipping...');
+    return;
+  }
+  
+  isInitialized = true;
+  console.log('[Gemini Translator] Initializing extension...');
+  
   chrome.runtime.sendMessage({ type: 'CONTENT_READY' });
   
   // 선택 번역 설정 로드
@@ -778,6 +788,7 @@ const initializeExtension = async () => {
     console.log('[Gemini Translator] Settings loaded:', settings);
   } catch (error) {
     console.error('설정 로드 오류:', error);
+    isInitialized = false; // 오류 시 재시도 허용
   }
 };
 
