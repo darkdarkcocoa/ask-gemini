@@ -684,7 +684,8 @@ function showTranslationError(error, isInputField) {
 }
 
 // Ctrl+C+C 감지를 위한 키보드 이벤트 리스너 (capture 단계에서 실행하여 구글의 이벤트 핸들러보다 우선)
-document.addEventListener('keydown', async (e) => {
+// 다중 레벨에서 이벤트 캡처하여 더 확실하게 처리
+const handleKeydown = async (e) => {
   // 디버깅을 위한 로그
   if (e.ctrlKey && e.key === 'c') {
     console.log('[Gemini Translator] Ctrl+C pressed, enabled:', selectionTranslateEnabled);
@@ -700,6 +701,8 @@ document.addEventListener('keydown', async (e) => {
     if (currentTime - lastCtrlCTime < 500) {
       console.log('[Gemini Translator] Double Ctrl+C detected, translating...');
       e.preventDefault(); // 복사 동작 방지
+      e.stopPropagation(); // 이벤트 전파 차단
+      e.stopImmediatePropagation(); // 다른 핸들러 실행 차단
       await translateSelection();
       lastCtrlCTime = 0; // 리셋
     } else {
@@ -707,7 +710,17 @@ document.addEventListener('keydown', async (e) => {
       lastCtrlCTime = currentTime;
     }
   }
-}, true); // capture 단계에서 이벤트 처리하여 구글의 이벤트 핸들러보다 우선 실행
+};
+
+// 여러 레벨에서 이벤트 캡처
+document.addEventListener('keydown', handleKeydown, true); // capture 단계에서 이벤트 처리하여 구글의 이벤트 핸들러보다 우선 실행
+window.addEventListener('keydown', handleKeydown, true); // window 레벨에서도 캡처
+
+// DOM이 완전히 로드된 후에도 한 번 더 등록 (구글의 동적 스크립트 대응)
+document.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('keydown', handleKeydown, true);
+  window.addEventListener('keydown', handleKeydown, true);
+});
 
 // 클릭 시 툴팁 제거
 document.addEventListener('click', () => {
@@ -721,7 +734,7 @@ document.addEventListener('click', () => {
 });
 
 // 페이지 로드 완료 시 준비 완료 메시지 전송 및 설정 로드
-window.addEventListener('load', async () => {
+const initializeExtension = async () => {
   chrome.runtime.sendMessage({ type: 'CONTENT_READY' });
   
   // 선택 번역 설정 로드
@@ -730,7 +743,16 @@ window.addEventListener('load', async () => {
     if (settings.selectionTranslateEnabled !== undefined) {
       selectionTranslateEnabled = settings.selectionTranslateEnabled;
     }
+    console.log('[Gemini Translator] Settings loaded:', settings);
   } catch (error) {
     console.error('설정 로드 오류:', error);
   }
-});
+};
+
+// 여러 시점에서 초기화 시도
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initializeExtension);
+} else {
+  initializeExtension();
+}
+window.addEventListener('load', initializeExtension);
