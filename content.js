@@ -1,6 +1,11 @@
 // 텍스트 노드 상수
 const TEXT_NODE = Node.TEXT_NODE;
 
+// 확장 프로그램 로드 확인용 로그
+console.log('[Gemini Translator] Content script loaded successfully');
+console.log('[Gemini Translator] Document ready state:', document.readyState);
+console.log('[Gemini Translator] URL:', window.location.href);
+
 // 번역 진행표시줄 추가 함수
 function addTranslationProgressBar() {
   // 기존 프로그레스 바가 있는지 확인
@@ -458,6 +463,12 @@ let lastCtrlCTime = 0;
 let selectionTranslateEnabled = true;
 let translationTooltip = null;
 
+console.log('[Gemini Translator] Selection translation variables initialized:', {
+  lastCtrlCTime,
+  selectionTranslateEnabled,
+  translationTooltip
+});
+
 // 번역 툴팁 생성 함수
 function createTranslationTooltip() {
   const tooltip = document.createElement('div');
@@ -713,8 +724,10 @@ const handleKeydown = async (e) => {
 };
 
 // 여러 레벨에서 이벤트 캡처
+console.log('[Gemini Translator] Registering event listeners...');
 document.addEventListener('keydown', handleKeydown, true); // capture 단계에서 이벤트 처리하여 구글의 이벤트 핸들러보다 우선 실행
 window.addEventListener('keydown', handleKeydown, true); // window 레벨에서도 캡처
+console.log('[Gemini Translator] Event listeners registered successfully');
 
 // DOM이 완전히 로드된 후에도 한 번 더 등록 (구글의 동적 스크립트 대응)
 document.addEventListener('DOMContentLoaded', () => {
