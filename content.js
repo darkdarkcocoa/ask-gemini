@@ -683,7 +683,7 @@ function showTranslationError(error, isInputField) {
   }
 }
 
-// Ctrl+C+C 감지를 위한 키보드 이벤트 리스너
+// Ctrl+C+C 감지를 위한 키보드 이벤트 리스너 (capture 단계에서 실행하여 구글의 이벤트 핸들러보다 우선)
 document.addEventListener('keydown', async (e) => {
   // 디버깅을 위한 로그
   if (e.ctrlKey && e.key === 'c') {
@@ -707,7 +707,7 @@ document.addEventListener('keydown', async (e) => {
       lastCtrlCTime = currentTime;
     }
   }
-});
+}, true); // capture 단계에서 이벤트 처리하여 구글의 이벤트 핸들러보다 우선 실행
 
 // 클릭 시 툴팁 제거
 document.addEventListener('click', () => {
