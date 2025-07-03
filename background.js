@@ -24,17 +24,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'SAVE_SETTINGS') {
     chrome.storage.sync.set({
       apiKey: message.apiKey,
-      extensionEnabled: message.extensionEnabled
+      extensionEnabled: message.extensionEnabled,
+      language: message.language
     });
     sendResponse({ success: true });
   }
   
   // 설정 가져오기
   if (message.type === 'GET_SETTINGS') {
-    chrome.storage.sync.get(['apiKey', 'extensionEnabled'], (data) => {
+    chrome.storage.sync.get(['apiKey', 'extensionEnabled', 'language'], (data) => {
       sendResponse({
         apiKey: data.apiKey || '',
-        extensionEnabled: data.extensionEnabled !== false // 기본값 true
+        extensionEnabled: data.extensionEnabled !== false, // 기본값 true
+        language: data.language || '' // 빈 문자열이면 자동 감지
       });
     });
     return true; // 비동기 응답을 위해 true 반환

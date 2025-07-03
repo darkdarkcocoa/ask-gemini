@@ -6,10 +6,47 @@ let extensionEnabled = true;
 let isQuestionUIOpen = false;
 let currentSelectedText = '';
 let currentSelectionRange = null;
+let currentLanguage = 'ko'; // 기본값
 
 // UI 요소 참조
 let questionPopup = null;
 let responsePopup = null;
+
+// 다국어 지원 텍스트 (간소화된 버전)
+const texts = {
+  ko: {
+    questionPlaceholder: '이 텍스트에 대해 무엇을 알고 싶으신가요?',
+    askButton: '질문하기',
+    cancelButton: '취소',
+    closeButton: '닫기',
+    processingButton: '처리 중...',
+    extensionReloadRequired: '확장 프로그램을 새로 고침해야 합니다. 페이지를 새로 고침하거나 확장 프로그램을 다시 로드해주세요.',
+    genericError: '오류가 발생했습니다',
+    noResponse: '응답을 받을 수 없습니다.'
+  },
+  en: {
+    questionPlaceholder: 'What would you like to know about this text?',
+    askButton: 'Ask',
+    cancelButton: 'Cancel',
+    closeButton: 'Close',
+    processingButton: 'Processing...',
+    extensionReloadRequired: 'Extension needs to be refreshed. Please reload the page or reload the extension.',
+    genericError: 'An error has occurred',
+    noResponse: 'Unable to get a response.'
+  }
+};
+
+function getLocalizedText(key) {
+  return texts[currentLanguage] && texts[currentLanguage][key] ? 
+    texts[currentLanguage][key] : 
+    (texts.ko[key] || key);
+}
+
+function updateLanguage(language) {
+  if (texts[language]) {
+    currentLanguage = language;
+  }
+}
 
 // 텍스트 선택 감지 - 지연 처리로 개선
 document.addEventListener('mouseup', handleTextSelection);
@@ -149,7 +186,7 @@ function showQuestionPopup(x, y) {
   
   // 질문 입력 영역
   const questionInput = document.createElement('textarea');
-  questionInput.placeholder = '이 텍스트에 대해 무엇을 알고 싶으신가요?';
+  questionInput.placeholder = getLocalizedText('questionPlaceholder');
   questionInput.style.cssText = `
     width: 100%;
     height: 80px;
@@ -177,7 +214,7 @@ function showQuestionPopup(x, y) {
   
   // 취소 버튼
   const cancelButton = document.createElement('button');
-  cancelButton.textContent = '취소';
+  cancelButton.textContent = getLocalizedText('cancelButton');
   cancelButton.style.cssText = `
     padding: 8px 16px;
     border: none;
@@ -192,7 +229,7 @@ function showQuestionPopup(x, y) {
   
   // 질문하기 버튼
   const askButton = document.createElement('button');
-  askButton.textContent = '질문하기';
+  askButton.textContent = getLocalizedText('askButton');
   askButton.style.cssText = `
     padding: 8px 16px;
     border: none;
@@ -214,11 +251,16 @@ function showQuestionPopup(x, y) {
     }
     
     // 로딩 상태로 변경
-    askButton.textContent = '처리 중...';
+    askButton.textContent = getLocalizedText('processingButton');
     askButton.disabled = true;
     questionInput.disabled = true;
     
     try {
+      // Extension context 유효성 확인
+      if (!chrome.runtime?.id) {
+        throw new Error('Extension context is invalid. Please reload the page.');
+      }
+      
       // Gemini API 호출
       const response = await chrome.runtime.sendMessage({
         type: 'ASK_QUESTION',
@@ -227,19 +269,27 @@ function showQuestionPopup(x, y) {
       });
       
       // 응답 처리
-      if (response.error) {
+      if (response && response.error) {
         showErrorMessage(response.error);
-      } else if (response.answer) {
+      } else if (response && response.answer) {
         hideQuestionPopup();
         showResponsePopup(response.answer);
       } else {
-        showErrorMessage('응답을 받을 수 없습니다.');
+        showErrorMessage(getLocalizedText('noResponse'));
       }
     } catch (error) {
       console.error('[Gemini Assistant] Error:', error);
-      showErrorMessage('오류가 발생했습니다: ' + error.message);
+      
+      // Extension context 오류 처리
+      if (error.message.includes('Extension context invalid') || 
+          error.message.includes('message port closed') ||
+          !chrome.runtime?.id) {
+        showErrorMessage(getLocalizedText('extensionReloadRequired'));
+      } else {
+        showErrorMessage(getLocalizedText('genericError') + ': ' + error.message);
+      }
     } finally {
-      askButton.textContent = '질문하기';
+      askButton.textContent = getLocalizedText('askButton');
       askButton.disabled = false;
       questionInput.disabled = false;
     }
@@ -319,7 +369,7 @@ function showResponsePopup(answer) {
   
   // 닫기 버튼
   const closeButton = document.createElement('button');
-  closeButton.textContent = '닫기';
+  closeButton.textContent = getLocalizedText('closeButton');
   closeButton.style.cssText = `
     padding: 8px 16px;
     border: none;
@@ -457,16 +507,40 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ success: true });
     return true;
   }
+  
+  if (message.type === 'LANGUAGE_CHANGED') {
+    updateLanguage(message.language);
+    sendResponse({ success: true });
+    return true;
+  }
 });
 
 // 확장 프로그램 초기화
 async function initializeExtension() {
   try {
+    // Extension context 유효성 확인
+    if (!chrome.runtime?.id) {
+      console.warn('[Gemini Assistant] Extension context is invalid during initialization');
+      return;
+    }
+    
     const settings = await chrome.runtime.sendMessage({ type: 'GET_SETTINGS' });
     extensionEnabled = settings.extensionEnabled !== false;
-    console.log('[Gemini Assistant] Extension initialized:', { extensionEnabled });
+    
+    // 언어 설정 초기화
+    const browserLanguage = (navigator.language || navigator.userLanguage).startsWith('ko') ? 'ko' : 'en';
+    currentLanguage = settings.language || browserLanguage;
+    
+    console.log('[Gemini Assistant] Extension initialized:', { extensionEnabled, currentLanguage });
   } catch (error) {
     console.error('[Gemini Assistant] Initialization error:', error);
+    
+    // Extension context 오류 시 재시도 로직
+    if (error.message.includes('Extension context invalid') || 
+        error.message.includes('message port closed') ||
+        !chrome.runtime?.id) {
+      console.warn('[Gemini Assistant] Extension context invalid during initialization. Extension may need to be reloaded.');
+    }
   }
 }
 

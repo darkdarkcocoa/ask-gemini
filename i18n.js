@@ -1,163 +1,144 @@
-// 다국어 지원을 위한 텍스트 데이터
-const i18n = {
-  en: {
-    // Main UI
-    title: 'Gemini Page Translator',
-    apiKeyLabel: 'Gemini API Key',
-    apiKeyPlaceholder: 'Enter your API key',
-    toggleApiKeyTitle: 'Show/Hide API Key',
-    apiKeyNote: 'API key is stored locally only',
-    
-    // Language settings
-    sourceLangLabel: 'Source Language',
-    targetLangLabel: 'Target Language',
-    uiLanguageLabel: 'Interface Language',
-    
-    // Language options
-    autoDetect: 'Auto Detect',
-    english: 'English',
-    korean: '한국어',
-    japanese: 'Japanese',
-    chinese: 'Chinese',
-    french: 'French',
-    german: 'German',
-    spanish: 'Spanish',
-    russian: 'Russian',
-    
-    // Selection translation
-    selectionTranslateLabel: 'Selection Translation (Ctrl+C+C)',
-    selectionTranslateNote: 'Select text and press Ctrl+C twice to translate',
-    
-    // Buttons
-    translatePage: 'Translate Page',
-    toggleTranslation: 'Toggle Original/Translation',
-    
-    // Status messages
-    translating: 'Translating...',
-    translationComplete: 'Translation complete!',
-    translationError: 'Translation failed',
-    settingsSaved: 'Settings saved',
-    apiKeyRequired: 'API key is required',
-    
-    // Footer
-    poweredBy: 'Powered by Gemini API'
-  },
-  
-  ko: {
-    // Main UI
-    title: 'Gemini Page Translator',
-    apiKeyLabel: 'Gemini API Key',
-    apiKeyPlaceholder: 'API 키를 입력하세요',
-    toggleApiKeyTitle: 'API 키 표시/숨김',
-    apiKeyNote: 'API 키는 로컬에만 저장됩니다',
-    
-    // Language settings
-    sourceLangLabel: '원본 언어',
-    targetLangLabel: '번역 언어',
-    uiLanguageLabel: '인터페이스 언어',
-    
-    // Language options
-    autoDetect: '자동 감지',
-    english: '영어',
-    korean: '한국어',
-    japanese: '일본어',
-    chinese: '중국어',
-    french: '프랑스어',
-    german: '독일어',
-    spanish: '스페인어',
-    russian: '러시아어',
-    
-    // Selection translation
-    selectionTranslateLabel: '선택 텍스트 번역 (Ctrl+C+C)',
-    selectionTranslateNote: '텍스트를 선택하고 Ctrl+C를 두 번 누르면 번역됩니다',
-    
-    // Buttons
-    translatePage: '페이지 번역',
-    toggleTranslation: '원문/번역 전환',
-    
-    // Status messages
-    translating: '번역 중...',
-    translationComplete: '번역 완료!',
-    translationError: '번역 실패',
-    settingsSaved: '설정 저장됨',
-    apiKeyRequired: 'API 키가 필요합니다',
-    
-    // Footer
-    poweredBy: 'Powered by Gemini API'
-  }
-};
-
-// 현재 언어 가져오기
-function getCurrentUILanguage() {
-  return localStorage.getItem('uiLanguage') || 'en';
-}
-
-// 언어 설정
-function setUILanguage(lang) {
-  localStorage.setItem('uiLanguage', lang);
-}
-
-// 텍스트 가져오기
-function getText(key) {
-  const currentLang = getCurrentUILanguage();
-  return i18n[currentLang] && i18n[currentLang][key] ? i18n[currentLang][key] : i18n.en[key] || key;
-}
-
-// UI 업데이트 함수
-function updateUI() {
-  // HTML lang 속성 업데이트
-  document.documentElement.lang = getCurrentUILanguage();
-  
-  // 텍스트 요소들 업데이트
-  const elements = {
-    // Labels
-    'label[for="apiKey"]': 'apiKeyLabel',
-    'label[for="sourceLang"]': 'sourceLangLabel', 
-    'label[for="targetLang"]': 'targetLangLabel',
-    'label[for="uiLanguage"]': 'uiLanguageLabel',
-    'label[for="selectionTranslate"]': 'selectionTranslateLabel',
-    
-    // Inputs
-    '#apiKey': { attr: 'placeholder', key: 'apiKeyPlaceholder' },
-    '#toggleApiKey': { attr: 'title', key: 'toggleApiKeyTitle' },
-    
-    // Buttons
-    '#translateBtn': 'translatePage',
-    '#toggleBtn': 'toggleTranslation',
-    
-    // Options
-    'option[value="auto"]': 'autoDetect',
-    'option[value="en"]': 'english',
-    'option[value="ko"]': 'korean',
-    'option[value="ja"]': 'japanese',
-    'option[value="zh"]': 'chinese',
-    'option[value="fr"]': 'french',
-    'option[value="de"]': 'german',
-    'option[value="es"]': 'spanish',
-    'option[value="ru"]': 'russian',
-    
-    // Small texts
-    '.api-key-note': 'apiKeyNote',
-    '.selection-translate-note': 'selectionTranslateNote',
-    
-    // Footer
-    'footer p': 'poweredBy'
-  };
-  
-  // 요소들 업데이트
-  Object.entries(elements).forEach(([selector, config]) => {
-    const element = document.querySelector(selector);
-    if (element) {
-      if (typeof config === 'string') {
-        element.textContent = getText(config);
-      } else if (config.attr) {
-        element.setAttribute(config.attr, getText(config.key));
+// 다국어 지원 시스템
+class I18n {
+  constructor() {
+    this.currentLanguage = this.detectBrowserLanguage();
+    this.messages = {
+      ko: {
+        // Content Script UI
+        questionPlaceholder: '이 텍스트에 대해 무엇을 알고 싶으신가요?',
+        askButton: '질문하기',
+        cancelButton: '취소',
+        closeButton: '닫기',
+        processingButton: '처리 중...',
+        
+        // Error Messages
+        extensionReloadRequired: '확장 프로그램을 새로 고침해야 합니다. 페이지를 새로 고침하거나 확장 프로그램을 다시 로드해주세요.',
+        genericError: '오류가 발생했습니다',
+        noResponse: '응답을 받을 수 없습니다.',
+        apiKeyNotSet: 'API 키가 설정되지 않았습니다. 확장 프로그램 설정에서 API 키를 입력해주세요.',
+        inputRequired: '선택된 텍스트와 질문이 필요합니다.',
+        textTooLong: '선택된 텍스트가 너무 깁니다. (최대 3000자)',
+        textLengthNotSuitable: '텍스트 길이가 적절하지 않습니다',
+        apiError: 'API 오류',
+        apiRequestFormatError: 'API 요청 형식 오류. API 키를 확인해주세요.',
+        apiKeyInvalid: 'API 키가 유효하지 않거나 권한이 없습니다.',
+        apiRateLimit: 'API 요청 한도 초과. 잠시 후 다시 시도해주세요.',
+        responseProcessError: '응답을 처리할 수 없습니다.',
+        requestTimeout: '요청 시간이 초과되었습니다. 다시 시도해주세요.',
+        
+        // Popup UI
+        title: 'Gemini 웹 AI 어시스턴트',
+        apiKeyLabel: 'Gemini API 키:',
+        apiKeyPlaceholder: 'API 키를 입력하세요',
+        enabledLabel: '확장 프로그램 활성화',
+        languageLabel: '언어 설정:',
+        saveButton: '저장',
+        howToGetApiKey: 'API 키 받는 방법',
+        usage: '사용법',
+        usageStep1: '1. 웹페이지에서 <strong>텍스트를 드래그</strong>하여 선택하세요',
+        usageStep2: '2. 질문 입력창이 나타나면 <strong>궁금한 점을 질문</strong>하세요',
+        usageStep3: '3. Enter를 누르거나 <strong>질문하기</strong> 버튼을 클릭하세요',
+        usageStep4: '4. AI가 선택한 텍스트를 기반으로 <strong>답변</strong>해드립니다',
+        settingsSaved: '설정이 저장되었습니다!',
+        
+        // Languages
+        korean: '한국어',
+        english: 'English'
+      },
+      
+      en: {
+        // Content Script UI
+        questionPlaceholder: 'What would you like to know about this text?',
+        askButton: 'Ask',
+        cancelButton: 'Cancel',
+        closeButton: 'Close',
+        processingButton: 'Processing...',
+        
+        // Error Messages
+        extensionReloadRequired: 'Extension needs to be refreshed. Please reload the page or reload the extension.',
+        genericError: 'An error has occurred',
+        noResponse: 'Unable to get a response.',
+        apiKeyNotSet: 'API key is not set. Please enter your API key in the extension settings.',
+        inputRequired: 'Selected text and question are required.',
+        textTooLong: 'Selected text is too long. (Maximum 3000 characters)',
+        textLengthNotSuitable: 'Text length is not suitable',
+        apiError: 'API Error',
+        apiRequestFormatError: 'API request format error. Please check your API key.',
+        apiKeyInvalid: 'API key is invalid or you do not have permission.',
+        apiRateLimit: 'API request limit exceeded. Please try again later.',
+        responseProcessError: 'Unable to process the response.',
+        requestTimeout: 'Request timed out. Please try again.',
+        
+        // Popup UI
+        title: 'Gemini Web AI Assistant',
+        apiKeyLabel: 'Gemini API Key:',
+        apiKeyPlaceholder: 'Enter your API key',
+        enabledLabel: 'Enable Extension',
+        languageLabel: 'Language:',
+        saveButton: 'Save',
+        howToGetApiKey: 'How to get API Key',
+        usage: 'How to Use',
+        usageStep1: '1. <strong>Drag to select text</strong> on a webpage',
+        usageStep2: '2. <strong>Ask your question</strong> in the popup that appears',
+        usageStep3: '3. Press Enter or click the <strong>Ask</strong> button',
+        usageStep4: '4. AI will <strong>answer</strong> based on the selected text',
+        settingsSaved: 'Settings saved!',
+        
+        // Languages
+        korean: '한국어',
+        english: 'English'
       }
+    };
+  }
+  
+  // 브라우저 언어 감지
+  detectBrowserLanguage() {
+    const browserLang = navigator.language || navigator.userLanguage;
+    if (browserLang.startsWith('ko')) {
+      return 'ko';
+    } else {
+      return 'en';
     }
-  });
+  }
+  
+  // 언어 설정
+  setLanguage(lang) {
+    if (this.messages[lang]) {
+      this.currentLanguage = lang;
+    }
+  }
+  
+  // 현재 언어 반환
+  getCurrentLanguage() {
+    return this.currentLanguage;
+  }
+  
+  // 지원하는 언어 목록 반환
+  getSupportedLanguages() {
+    return [
+      { code: 'ko', name: this.messages.ko.korean },
+      { code: 'en', name: this.messages.en.english }
+    ];
+  }
+  
+  // 메시지 가져오기
+  getMessage(key, defaultValue = '') {
+    const messages = this.messages[this.currentLanguage];
+    return messages && messages[key] ? messages[key] : defaultValue;
+  }
+  
+  // 약칭 메서드
+  t(key, defaultValue = '') {
+    return this.getMessage(key, defaultValue);
+  }
 }
 
-// Export for use in other files
+// 전역 인스턴스 생성
+const i18n = new I18n();
+
+// 모듈로 내보내기 (다른 스크립트에서 사용할 수 있도록)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { i18n, getCurrentUILanguage, setUILanguage, getText, updateUI };
+  module.exports = { I18n, i18n };
+} else if (typeof window !== 'undefined') {
+  window.i18n = i18n;
 }
