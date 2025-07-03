@@ -1,88 +1,52 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ko">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gemini Page Translator</title>
+  <title>Gemini 웹 AI 어시스턴트</title>
   <link rel="stylesheet" href="popup.css">
-  <script src="../i18n.js"></script>
 </head>
 <body>
   <div class="container">
-    <h1>Gemini Page Translator</h1>
-    
-    <div class="form-group">
-      <label for="uiLanguage">Interface Language</label>
-      <select id="uiLanguage">
-        <option value="en">English</option>
-        <option value="ko">한국어</option>
-      </select>
+    <div class="header">
+      <h1>🧠 Gemini AI 어시스턴트</h1>
+      <p class="subtitle">웹페이지 텍스트에 대해 AI에게 질문하세요</p>
     </div>
     
     <div class="form-group">
-      <label for="apiKey">Gemini API Key</label>
+      <label for="apiKey">Gemini API 키</label>
       <div class="input-group">
-        <input type="password" id="apiKey" placeholder="Enter your API key">
-        <button id="toggleApiKey" class="icon-button" title="Show/Hide API Key">👁️</button>
+        <input type="password" id="apiKey" placeholder="API 키를 입력하세요">
+        <button id="toggleApiKey" class="icon-button" title="API 키 보기/숨기기">👁️</button>
       </div>
-      <small class="api-key-note">API key is stored locally only</small>
-    </div>
-    
-    <div class="form-group">
-      <label for="sourceLang">Source Language</label>
-      <select id="sourceLang">
-        <option value="auto">Auto Detect</option>
-        <option value="en">English</option>
-        <option value="ja">Japanese</option>
-        <option value="zh">Chinese</option>
-        <option value="fr">French</option>
-        <option value="de">German</option>
-        <option value="es">Spanish</option>
-        <option value="ru">Russian</option>
-      </select>
-    </div>
-    
-    <div class="form-group">
-      <label for="targetLang">Target Language</label>
-      <select id="targetLang">
-        <option value="ko">한국어</option>
-        <option value="en">English</option>
-        <option value="ja">Japanese</option>
-        <option value="zh">Chinese</option>
-        <option value="fr">French</option>
-        <option value="de">German</option>
-        <option value="es">Spanish</option>
-        <option value="ru">Russian</option>
-      </select>
+      <small class="api-key-note">API 키는 로컬에만 저장됩니다</small>
     </div>
     
     <div class="form-group">
       <label for="extensionEnabled" class="switch-label">
         <input type="checkbox" id="extensionEnabled" checked>
         <span class="switch-slider"></span>
-        Enable Translation Extension
+        확장 프로그램 활성화
       </label>
-      <small class="extension-enabled-note">Turn off to disable all translation features</small>
+      <small class="extension-note">비활성화하면 모든 AI 어시스턴트 기능이 꺼집니다</small>
     </div>
     
-    <div class="form-group">
-      <label for="selectionTranslate">
-        <input type="checkbox" id="selectionTranslate" checked>
-        Selection Translation (Ctrl+C+C)
-      </label>
-      <small class="selection-translate-note">Select text and press Ctrl+C twice to translate</small>
-    </div>
-    
-    <div class="button-group">
-      <button id="translateBtn" class="primary-button">Translate Page</button>
-      <button id="toggleBtn">Toggle Original/Translation</button>
+    <div class="usage-guide">
+      <h3>📖 사용법</h3>
+      <ol>
+        <li>웹페이지에서 <strong>텍스트를 드래그</strong>하여 선택하세요</li>
+        <li>질문 입력창이 나타나면 <strong>궁금한 점을 질문</strong>하세요</li>
+        <li>Enter를 누르거나 <strong>질문하기</strong> 버튼을 클릭하세요</li>
+        <li>AI가 선택한 텍스트를 기반으로 <strong>답변</strong>해드립니다</li>
+      </ol>
     </div>
     
     <div class="status-area" id="statusArea"></div>
     
-    <footer>
-      <p>Powered by Gemini API</p>
-    </footer>
+    <div class="footer">
+      <p>Powered by <strong>Gemini AI</strong></p>
+      <a href="https://ai.google.dev/" target="_blank" class="api-link">API 키 받기</a>
+    </div>
   </div>
   
   <script src="popup.js"></script>

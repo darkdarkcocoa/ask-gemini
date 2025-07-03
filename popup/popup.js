@@ -1,14 +1,8 @@
 // DOM 요소
 const apiKeyInput = document.getElementById('apiKey');
 const toggleApiKeyBtn = document.getElementById('toggleApiKey');
-const sourceLangSelect = document.getElementById('sourceLang');
-const targetLangSelect = document.getElementById('targetLang');
-const uiLanguageSelect = document.getElementById('uiLanguage');
-const translateBtn = document.getElementById('translateBtn');
-const toggleBtn = document.getElementById('toggleBtn');
-const statusArea = document.getElementById('statusArea');
-const selectionTranslateCheckbox = document.getElementById('selectionTranslate');
 const extensionEnabledCheckbox = document.getElementById('extensionEnabled');
+const statusArea = document.getElementById('statusArea');
 
 // 상태 표시 함수
 function showStatus(message, type = 'info') {
@@ -23,56 +17,32 @@ function showStatus(message, type = 'info') {
     statusArea.classList.add('status-info');
   }
   
-  // 3초 후 상태 메시지 제거 (에러 메시지는 유지)
-  if (type !== 'error') {
-    setTimeout(() => {
-      statusArea.textContent = '';
-      statusArea.className = 'status-area';
-    }, 3000);
-  }
-}
-
-// UI 언어 변경 처리
-function handleUILanguageChange() {
-  const selectedLang = uiLanguageSelect.value;
-  setUILanguage(selectedLang);
-  updateUI();
+  // 3초 후 상태 메시지 제거 (에러 메시지는 5초)
+  const timeout = type === 'error' ? 5000 : 3000;
+  setTimeout(() => {
+    statusArea.textContent = '';
+    statusArea.className = 'status-area';
+  }, timeout);
 }
 
 // 설정 로드
 async function loadSettings() {
   try {
-    // UI 언어 먼저 로드하고 적용
-    const uiLang = getCurrentUILanguage();
-    uiLanguageSelect.value = uiLang;
-    updateUI();
-    
     const settings = await chrome.runtime.sendMessage({ type: 'GET_SETTINGS' });
     
     if (settings.apiKey) {
       apiKeyInput.value = settings.apiKey;
     }
     
-    if (settings.sourceLang) {
-      sourceLangSelect.value = settings.sourceLang;
-    }
+    extensionEnabledCheckbox.checked = settings.extensionEnabled !== false;
     
-    if (settings.targetLang) {
-      targetLangSelect.value = settings.targetLang;
-    }
-    
-    if (settings.selectionTranslateEnabled !== undefined) {
-      selectionTranslateCheckbox.checked = settings.selectionTranslateEnabled;
-    }
-    
-    if (settings.extensionEnabled !== undefined) {
-      extensionEnabledCheckbox.checked = settings.extensionEnabled;
-    } else {
-      extensionEnabledCheckbox.checked = true; // 기본값은 활성화
+    // API 키가 없으면 안내 메시지 표시
+    if (!settings.apiKey) {
+      showStatus('API 키를 입력해주세요', 'info');
     }
   } catch (error) {
     console.error('Settings load error:', error);
-    showStatus(getText('translationError'), 'error');
+    showStatus('설정을 불러올 수 없습니다', 'error');
   }
 }
 
@@ -82,73 +52,27 @@ async function saveSettings() {
     await chrome.runtime.sendMessage({
       type: 'SAVE_SETTINGS',
       apiKey: apiKeyInput.value.trim(),
-      sourceLang: sourceLangSelect.value,
-      targetLang: targetLangSelect.value,
-      selectionTranslateEnabled: selectionTranslateCheckbox.checked,
       extensionEnabled: extensionEnabledCheckbox.checked
     });
     
-    showStatus(getText('settingsSaved'), 'success');
+    // API 키가 저장되면 성공 메시지 표시
+    if (apiKeyInput.value.trim()) {
+      showStatus('설정이 저장되었습니다', 'success');
+    }
   } catch (error) {
     console.error('Settings save error:', error);
-    showStatus(getText('translationError'), 'error');
+    showStatus('설정 저장에 실패했습니다', 'error');
   }
 }
 
 // 현재 탭 가져오기
 async function getCurrentTab() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  return tab;
-}
-
-// 페이지 번역 요청
-async function translatePage() {
   try {
-    // 확장 프로그램 활성화 상태 확인
-    if (!extensionEnabledCheckbox.checked) {
-      showStatus('Translation extension is disabled', 'error');
-      return;
-    }
-    
-    // API 키 확인
-    if (!apiKeyInput.value.trim()) {
-      showStatus(getText('apiKeyRequired'), 'error');
-      return;
-    }
-    
-    // 설정 저장
-    await saveSettings();
-    
-    // 현재 탭 가져오기
-    const tab = await getCurrentTab();
-    
-    // 번역 요청
-    showStatus(getText('translating'), 'info');
-    
-    // 번역 요청을 보내고 응답 대기
-    const response = await chrome.tabs.sendMessage(tab.id, { 
-      type: 'TRANSLATE_PAGE',
-      waitForCompletion: true // 실제 번역 완료까지 대기 플래그 추가
-    });
-    
-    // 실제 번역이 완료된 후에만 성공 메시지 표시
-    if (response && response.translationComplete) {
-      showStatus(getText('translationComplete'), 'success');
-    }
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    return tab;
   } catch (error) {
-    console.error('Translation request error:', error);
-    showStatus(getText('translationError'), 'error');
-  }
-}
-
-// 번역 토글 요청
-async function toggleTranslation() {
-  try {
-    const tab = await getCurrentTab();
-    await chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_TRANSLATION' });
-  } catch (error) {
-    console.error('Translation toggle error:', error);
-    showStatus(getText('translationError'), 'error');
+    console.error('Get current tab error:', error);
+    return null;
   }
 }
 
@@ -157,58 +81,73 @@ function toggleApiKeyVisibility() {
   if (apiKeyInput.type === 'password') {
     apiKeyInput.type = 'text';
     toggleApiKeyBtn.textContent = '🔒';
+    toggleApiKeyBtn.title = 'API 키 숨기기';
   } else {
     apiKeyInput.type = 'password';
     toggleApiKeyBtn.textContent = '👁️';
+    toggleApiKeyBtn.title = 'API 키 보기';
   }
 }
 
-// 완료 메시지 수신 처리 리스너 추가
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === 'TRANSLATION_COMPLETE') {
-    showStatus(getText('translationComplete'), 'success');
-  }
-});
+// API 키 유효성 간단 검증
+function validateApiKey(apiKey) {
+  // Gemini API 키는 보통 39자 길이의 문자열
+  return apiKey && apiKey.length >= 30 && apiKey.startsWith('AI');
+}
 
 // 이벤트 리스너 등록
 document.addEventListener('DOMContentLoaded', loadSettings);
-translateBtn.addEventListener('click', translatePage);
-toggleBtn.addEventListener('click', toggleTranslation);
 toggleApiKeyBtn.addEventListener('click', toggleApiKeyVisibility);
-uiLanguageSelect.addEventListener('change', handleUILanguageChange);
 
 // 설정 변경 시 자동 저장
-apiKeyInput.addEventListener('blur', saveSettings);
-sourceLangSelect.addEventListener('change', saveSettings);
-targetLangSelect.addEventListener('change', saveSettings);
-selectionTranslateCheckbox.addEventListener('change', async () => {
-  await saveSettings();
-  // 현재 탭의 content script에 설정 변경 알림
-  try {
-    const tab = await getCurrentTab();
-    if (tab && tab.id) {
-      chrome.tabs.sendMessage(tab.id, {
-        type: 'SELECTION_TRANSLATE_TOGGLE',
-        enabled: selectionTranslateCheckbox.checked
-      });
-    }
-  } catch (error) {
-    console.error('Settings transfer error:', error);
+apiKeyInput.addEventListener('input', () => {
+  const apiKey = apiKeyInput.value.trim();
+  
+  // API 키 형식 간단 검증
+  if (apiKey && !validateApiKey(apiKey)) {
+    showStatus('API 키 형식이 올바르지 않습니다 (AI로 시작하는 39자)', 'error');
+  } else if (apiKey) {
+    showStatus('API 키가 유효한 형식입니다', 'success');
   }
 });
 
+apiKeyInput.addEventListener('blur', saveSettings);
+
 extensionEnabledCheckbox.addEventListener('change', async () => {
   await saveSettings();
+  
   // 현재 탭의 content script에 확장 프로그램 활성화 상태 알림
   try {
     const tab = await getCurrentTab();
     if (tab && tab.id) {
-      chrome.tabs.sendMessage(tab.id, {
+      await chrome.tabs.sendMessage(tab.id, {
         type: 'EXTENSION_ENABLED_TOGGLE',
         enabled: extensionEnabledCheckbox.checked
       });
+      
+      if (extensionEnabledCheckbox.checked) {
+        showStatus('AI 어시스턴트가 활성화되었습니다', 'success');
+      } else {
+        showStatus('AI 어시스턴트가 비활성화되었습니다', 'info');
+      }
     }
   } catch (error) {
-    console.error('Settings transfer error:', error);
+    console.error('Extension toggle error:', error);
+    // 탭 메시지 전송 실패는 무시 (content script가 없을 수 있음)
+  }
+});
+
+// Enter 키로 설정 저장
+apiKeyInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    apiKeyInput.blur(); // blur 이벤트로 저장 트리거
+  }
+});
+
+// 팝업이 열릴 때마다 설정 다시 로드
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    loadSettings();
   }
 });

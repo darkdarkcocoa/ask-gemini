@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Gemini Page Translator",
-  "version": "0.1.0",
-  "description": "Translate current page in-place using Gemini API",
+  "name": "Gemini Web Assistant",
+  "version": "1.0.0",
+  "description": "AI assistant that answers questions about selected text using Gemini API",
   "permissions": ["storage", "scripting", "tabs"],
   "host_permissions": [
     "https://generativelanguage.googleapis.com/*"

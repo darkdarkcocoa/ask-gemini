@@ -1,965 +1,478 @@
-// 텍스트 노드 상수
-const TEXT_NODE = Node.TEXT_NODE;
+// Gemini 웹 AI 어시스턴트 - Content Script
+console.log('[Gemini Assistant] Content script loaded');
 
-// 확장 프로그램 로드 확인용 로그
-console.log('[Gemini Translator] Content script loaded successfully');
-console.log('[Gemini Translator] Document ready state:', document.readyState);
-console.log('[Gemini Translator] URL:', window.location.href);
+// 전역 상태 관리
+let extensionEnabled = true;
+let isQuestionUIOpen = false;
+let currentSelectedText = '';
+let currentSelectionRange = null;
 
-// 번역 진행표시줄 추가 함수
-function addTranslationProgressBar() {
-  // 기존 프로그레스 바가 있는지 확인
-  if (document.getElementById('translation-progress-container')) {
-    return document.getElementById('translation-progress-bar');
+// UI 요소 참조
+let questionPopup = null;
+let responsePopup = null;
+
+// 텍스트 선택 감지 - 지연 처리로 개선
+document.addEventListener('mouseup', handleTextSelection);
+
+// 마우스 다운 시 기존 팝업 숨기기 (새로운 선택을 위해)
+document.addEventListener('mousedown', (event) => {
+  // 팝업 자체를 클릭한 경우는 무시
+  if (event.target.closest('#gemini-question-popup, #gemini-response-popup')) {
+    return;
   }
   
-  // 프로그레스 바 컨테이너 생성
-  const container = document.createElement('div');
-  container.id = 'translation-progress-container';
-  container.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 3px;
-    background-color: #f1f1f1;
-    z-index: 9999;
-    pointer-events: none;
+  // 새로운 선택을 시작할 때 기존 팝업 숨기기
+  if (questionPopup && !isQuestionUIOpen) {
+    hideQuestionPopup();
+  }
+});
+
+// 텍스트 선택 처리 함수
+function handleTextSelection(event) {
+  // 확장 프로그램이 비활성화된 경우 처리하지 않음
+  if (!extensionEnabled) return;
+  
+  // 이미 질문 UI가 열려있으면 처리하지 않음
+  if (isQuestionUIOpen) return;
+  
+  // 팝업 자체를 클릭한 경우 무시
+  if (event.target.closest('#gemini-question-popup, #gemini-response-popup')) {
+    return;
+  }
+  
+  // 약간의 지연을 두어 선택이 완전히 완료된 후 처리
+  setTimeout(() => {
+    const selection = window.getSelection();
+    const selectedText = selection.toString().trim();
+    
+    console.log('[Gemini Assistant] Selection check:', {
+      hasSelection: !!selectedText,
+      selectionLength: selectedText.length,
+      rangeCount: selection.rangeCount
+    });
+    
+    // 선택된 텍스트가 없으면 기존 UI 제거
+    if (!selectedText) {
+      hideQuestionPopup();
+      return;
+    }
+    
+    // 너무 짧거나 긴 텍스트는 처리하지 않음
+    if (selectedText.length < 5 || selectedText.length > 2000) {
+      console.log('[Gemini Assistant] Text length not suitable:', selectedText.length);
+      return;
+    }
+    
+    // 선택 범위 저장 및 하이라이트 유지
+    if (selection.rangeCount > 0) {
+      currentSelectionRange = selection.getRangeAt(0).cloneRange();
+      currentSelectedText = selectedText;
+      
+      console.log('[Gemini Assistant] Text selected successfully:', selectedText.substring(0, 50) + '...');
+      
+      // 선택된 텍스트의 위치를 기반으로 팝업 표시
+      const rect = currentSelectionRange.getBoundingClientRect();
+      const x = rect.left + window.scrollX;
+      const y = rect.bottom + window.scrollY;
+      
+      // 선택 상태를 유지하면서 질문 UI 표시
+      preserveSelectionAndShowPopup(x, y);
+    }
+  }, 50); // 50ms 지연
+}
+
+// 선택 상태를 유지하면서 팝업 표시
+function preserveSelectionAndShowPopup(x, y) {
+  // 현재 선택 상태 백업
+  const selection = window.getSelection();
+  const backupRange = currentSelectionRange;
+  
+  // 팝업 표시
+  showQuestionPopup(x, y);
+  
+  // 선택 상태 복원 (팝업 생성 후)
+  setTimeout(() => {
+    try {
+      if (backupRange && selection) {
+        selection.removeAllRanges();
+        selection.addRange(backupRange);
+        console.log('[Gemini Assistant] Selection restored after popup creation');
+      }
+    } catch (error) {
+      console.warn('[Gemini Assistant] Could not restore selection:', error);
+    }
+  }, 10);
+}
+
+// 질문 입력 팝업 표시
+function showQuestionPopup(x, y) {
+  // 기존 팝업 제거
+  hideQuestionPopup();
+  hideResponsePopup();
+  
+  // 팝업 컨테이너 생성
+  questionPopup = document.createElement('div');
+  questionPopup.id = 'gemini-question-popup';
+  questionPopup.style.cssText = `
+    position: absolute;
+    left: ${x}px;
+    top: ${y + 10}px;
+    z-index: 999999;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 16px;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    max-width: 400px;
+    min-width: 300px;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.1);
+    user-select: none;
+    pointer-events: auto;
   `;
   
-  // 프로그레스 바 생성
-  const progressBar = document.createElement('div');
-  progressBar.id = 'translation-progress-bar';
-  progressBar.style.cssText = `
-    height: 100%;
-    width: 0%;
-    background-color: #1a73e8;
-    transition: width 0.3s ease;
+  // 선택된 텍스트 미리보기
+  const selectedTextPreview = document.createElement('div');
+  selectedTextPreview.style.cssText = `
+    background: rgba(255,255,255,0.1);
+    padding: 8px 12px;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    font-size: 13px;
+    color: rgba(255,255,255,0.9);
+    max-height: 60px;
+    overflow-y: auto;
+    word-break: break-word;
   `;
+  selectedTextPreview.textContent = `"${currentSelectedText.substring(0, 150)}${currentSelectedText.length > 150 ? '...' : ''}"`
+  
+  // 질문 입력 영역
+  const questionInput = document.createElement('textarea');
+  questionInput.placeholder = '이 텍스트에 대해 무엇을 알고 싶으신가요?';
+  questionInput.style.cssText = `
+    width: 100%;
+    height: 80px;
+    padding: 10px;
+    border: none;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.9);
+    color: #333;
+    font-size: 14px;
+    font-family: inherit;
+    resize: none;
+    outline: none;
+    margin-bottom: 12px;
+    box-sizing: border-box;
+    user-select: auto;
+  `;
+  
+  // 버튼 컨테이너
+  const buttonContainer = document.createElement('div');
+  buttonContainer.style.cssText = `
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+  `;
+  
+  // 취소 버튼
+  const cancelButton = document.createElement('button');
+  cancelButton.textContent = '취소';
+  cancelButton.style.cssText = `
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.2);
+    color: white;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.2s;
+  `;
+  cancelButton.addEventListener('click', hideQuestionPopup);
+  
+  // 질문하기 버튼
+  const askButton = document.createElement('button');
+  askButton.textContent = '질문하기';
+  askButton.style.cssText = `
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.9);
+    color: #333;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s;
+  `;
+  
+  // 질문 처리
+  const handleQuestion = async () => {
+    const question = questionInput.value.trim();
+    if (!question) {
+      questionInput.focus();
+      return;
+    }
+    
+    // 로딩 상태로 변경
+    askButton.textContent = '처리 중...';
+    askButton.disabled = true;
+    questionInput.disabled = true;
+    
+    try {
+      // Gemini API 호출
+      const response = await chrome.runtime.sendMessage({
+        type: 'ASK_QUESTION',
+        selectedText: currentSelectedText,
+        question: question
+      });
+      
+      // 응답 처리
+      if (response.error) {
+        showErrorMessage(response.error);
+      } else if (response.answer) {
+        hideQuestionPopup();
+        showResponsePopup(response.answer);
+      } else {
+        showErrorMessage('응답을 받을 수 없습니다.');
+      }
+    } catch (error) {
+      console.error('[Gemini Assistant] Error:', error);
+      showErrorMessage('오류가 발생했습니다: ' + error.message);
+    } finally {
+      askButton.textContent = '질문하기';
+      askButton.disabled = false;
+      questionInput.disabled = false;
+    }
+  };
+  
+  askButton.addEventListener('click', handleQuestion);
+  
+  // Enter 키 처리 (Shift+Enter는 줄바꿈)
+  questionInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleQuestion();
+    }
+  });
+  
+  // 팝업 조립
+  buttonContainer.appendChild(cancelButton);
+  buttonContainer.appendChild(askButton);
+  
+  questionPopup.appendChild(selectedTextPreview);
+  questionPopup.appendChild(questionInput);
+  questionPopup.appendChild(buttonContainer);
   
   // 화면에 추가
-  container.appendChild(progressBar);
-  document.body.appendChild(container);
+  document.body.appendChild(questionPopup);
   
-  // 참조 저장
-  window._translationProgressBar = progressBar;
+  // 화면 경계 조정
+  adjustPopupPosition(questionPopup);
   
-  return progressBar;
+  // 포커스
+  questionInput.focus();
+  
+  isQuestionUIOpen = true;
 }
 
-// 청크 번역 결과 적용 함수
-function applyChunkTranslation(startIndex, translations, progress) {
-  if (!window._translationNodes || !translations) {
-    console.error('번역 결과 적용 오류: 노드 혹은 번역 결과가 없습니다.');
-    return;
-  }
-
-  // DOM 업데이트를 위한 변경 사항 수집
-  const updateBatch = [];
+// 응답 팝업 표시
+function showResponsePopup(answer) {
+  hideResponsePopup();
   
-  // 시작 인덱스부터 번역 적용
-  for (let i = 0; i < translations.length; i++) {
-    const nodeIndex = startIndex + i;
-    if (nodeIndex < window._translationNodes.length) {
-      const node = window._translationNodes[nodeIndex];
-      if (node && translations[i]) {
-        // 원본 텍스트가 저장되지 않은 경우 저장 (추가 보호막)
-        if (!originalMap.has(node)) {
-          originalMap.set(node, node.nodeValue);
-        }
-        
-        // 노드와 새 값을 보관
-        updateBatch.push({
-          node,
-          newValue: translations[i]
-        });
-      }
-    }
-  }
+  if (!currentSelectionRange) return;
   
-  // 화면 강제 리플로우를 위한 비동기 작업
-  // requestAnimationFrame을 사용하여 최적화
-  requestAnimationFrame(() => {
-    // 모든 DOM 업데이트를 한 번에 처리
-    updateBatch.forEach(update => {
-      update.node.nodeValue = update.newValue;
-      
-      // 가시적인 변화 효과를 위한 스타일 추가 (선택사항)
-      try {
-        const parent = update.node.parentElement;
-        if (parent && !parent.hasAttribute('data-translated')) {
-          parent.setAttribute('data-translated', 'true');
-          parent.style.transition = 'opacity 0.3s';
-          parent.style.opacity = '0.4';
-          setTimeout(() => {
-            parent.style.opacity = '1';
-          }, 50);
-        }
-      } catch (e) {
-        // 스타일 그리기 오류는 무시
-      }
-    });
-    
-    // 번역 진행 상황 표시 (경우에 따라 선택사항)
-    if (window._translationProgressBar && progress) {
-      window._translationProgressBar.style.width = `${Math.min(100, progress)}%`;
-    }
-  });
-}
-
-// 원본 텍스트 저장용 맵
-let originalMap = new Map();
-let isTranslated = false;
-
-// 번역 상태 저장
-let translationState = {
-  inProgress: false,
-  completed: false
-};
-
-// 페이지 번역 함수
-async function translatePage() {
-  // iframe 내부에서는 번역 실행 방지
-  if (window !== window.top) {
-    console.log('[Gemini Translator] Translation blocked: running inside iframe');
-    return { success: false, error: 'Translation not allowed in iframe' };
-  }
+  // 선택 범위의 위치 계산
+  const rect = currentSelectionRange.getBoundingClientRect();
+  const x = rect.left + window.scrollX;
+  const y = rect.bottom + window.scrollY + 10;
   
-  // 확장 프로그램 활성화 상태 확인
-  if (!extensionEnabled) {
-    console.log('[Gemini Translator] Translation blocked: extension is disabled');
-    return { success: false, error: 'Extension disabled' };
-  }
-  
-  // 이미 번역 중이면 중복 실행 방지
-  if (translationState.inProgress) {
-    return { success: true };
-  }
-  
-  // 이미 번역된 상태면 토글
-  if (translationState.completed) {
-    toggleTranslation();
-    return { success: true, translationComplete: true };
-  }
-  
-  translationState.inProgress = true;
-  
-  try {
-    // 번역 마커 정리 - 기존 번역 마커 제거
-    const existingMarkers = document.querySelectorAll('[data-translated="true"]');
-    existingMarkers.forEach(element => {
-      element.removeAttribute('data-translated');
-    });
-    console.log(`[Gemini Translator] Cleaned up ${existingMarkers.length} existing translation markers`);
-    
-    // 설정 가져오기
-    const settings = await chrome.runtime.sendMessage({ type: 'GET_SETTINGS' });
-    
-    // 확장 프로그램 상태 업데이트
-    extensionEnabled = settings.extensionEnabled !== false;
-    
-    // 다시 한번 확인
-    if (!extensionEnabled) {
-      console.log('[Gemini Translator] Translation blocked: extension disabled in settings');
-      translationState.inProgress = false;
-      return { success: false, error: 'Extension disabled' };
-    }
-    
-    // 텍스트 노드 수집
-    const textInfo = collectTextNodes(document.body);
-    const texts = textInfo.texts;
-    const nodes = textInfo.nodes;
-    
-    // 지역 변수로 이동하여 청크별 번역을 위해 접근 가능하게 함
-    window._translationNodes = nodes;
-    
-    if (texts.length === 0) {
-      console.log('번역할 텍스트가 없습니다.');
-      translationState.inProgress = false;
-      return { success: true, translationComplete: true };
-    }
-    
-    // 번역 시작 시 프로그레스 바 추가
-    addTranslationProgressBar();
-    
-    // 번역 요청
-    await chrome.runtime.sendMessage({
-      type: 'TRANSLATE',
-      segments: texts,
-      targetLang: settings.targetLang || 'ko'
-    });
-    
-    // 번역 요청이 보내진 후 바로 달성함 - 번역 결과는 청크별로 도착
-    
-    // 동적 콘텐츠 감시 시작
-    startObserving();
-    
-    // 플래그만 설정하고 방해하지 않음
-    translationState.completed = true;
-    isTranslated = true;
-    
-    return { success: true };
-  } catch (error) {
-    console.error('번역 처리 오류:', error);
-    alert(`번역 처리 오류: ${error.message}`);
-    return { success: false, error: error.message };
-  } finally {
-    // 실제 청크가 모두 처리된 후 translateState.inProgress = false가 됨
-    // 최종 청크가 처리되면 CHUNK_TRANSLATED 이벤트에서 이 플래그를 변경함
-  }
-}
-
-// 텍스트 노드 수집 함수
-function collectTextNodes(root) {
-  const texts = [];
-  const nodes = [];
-  
-  // 텍스트 노드 순회
-  const walker = document.createTreeWalker(
-    root,
-    NodeFilter.SHOW_TEXT,
-    {
-      acceptNode: function(node) {
-        // 이미 번역된 노드 제외
-        const parent = node.parentElement;
-        if (parent && parent.hasAttribute('data-translated')) {
-          return NodeFilter.FILTER_REJECT;
-        }
-        
-        // 의미 있는 텍스트만 수집 (공백, 스크립트, 스타일 제외)
-        if (node.nodeValue.trim() && 
-            !isInvisibleNode(node) &&
-            !isInScriptOrStyle(node)) {
-          return NodeFilter.FILTER_ACCEPT;
-        }
-        return NodeFilter.FILTER_REJECT;
-      }
-    }
-  );
-  
-  let node;
-  while ((node = walker.nextNode())) {
-    const text = node.nodeValue.trim();
-    if (text) {
-      texts.push(text);
-      nodes.push(node);
-      // 원본 텍스트 저장
-      originalMap.set(node, node.nodeValue);
-      // 부모 노드에 번역 마커 추가
-      if (node.parentElement) {
-        node.parentElement.setAttribute('data-translated', 'true');
-      }
-    }
-  }
-  
-  return { texts, nodes };
-}
-
-// 안전한 번역 결과 적용 함수
-function applyTranslationsSafely(nodes, translations) {
-  if (!nodes || !translations) {
-    console.warn('노드 또는 번역 결과가 없습니다.');
-    return;
-  }
-  
-  // 노드 수와 번역 결과 수가 일치하지 않는 경우 안전하게 처리
-  const minLength = Math.min(nodes.length, translations.length);
-  
-  if (nodes.length !== translations.length) {
-    console.warn(`노드 수(${nodes.length})와 번역 결과 수(${translations.length})가 일치하지 않습니다. ${minLength}개만 처리합니다.`);
-  }
-  
-  // 번역 적용 시 부분적으로 화면 업데이트 위해 지연 추가
-  const batchSize = 50; // 한 번에 처리할 노드 수
-  
-  // 노드를 나누어 일괄 처리
-  for (let i = 0; i < minLength; i += batchSize) {
-    const batch = nodes.slice(i, i + batchSize);
-    const batchTranslations = translations.slice(i, i + batchSize);
-    
-    // 비동기로 다음 배치 처리
-    setTimeout(() => {
-      batch.forEach((node, idx) => {
-        if (node && batchTranslations[idx] && node.nodeValue !== batchTranslations[idx]) {
-          try {
-            node.nodeValue = batchTranslations[idx];
-          } catch (error) {
-            console.warn('노드 업데이트 실패:', error);
-          }
-        }
-      });
-    }, 0);
-  }
-}
-
-// 기존 번역 결과 적용 함수 (기존 호환성 유지)
-function applyTranslations(nodes, translations) {
-  return applyTranslationsSafely(nodes, translations);
-}
-
-// 번역 토글 함수
-function toggleTranslation() {
-  if (!translationState.completed) {
-    return;
-  }
-  
-  // 번역 마커 상태 관리
-  if (isTranslated) {
-    // 번역 해제 시 모든 마커 제거
-    const existingMarkers = document.querySelectorAll('[data-translated="true"]');
-    existingMarkers.forEach(element => {
-      element.removeAttribute('data-translated');
-    });
-  }
-  
-  for (const [node, stored] of originalMap.entries()) {
-    if (node.nodeType === TEXT_NODE) {
-      const current = node.nodeValue;  // 현재 화면에 보이는 텍스트
-      node.nodeValue = stored;         // 저장된 텍스트로 교체
-      originalMap.set(node, current);  // 현재 텍스트를 저장
-    }
-  }
-  
-  isTranslated = !isTranslated;  // 상태는 마지막에 변경
-}
-
-// 보이지 않는 노드인지 확인
-function isInvisibleNode(node) {
-  const element = node.parentElement;
-  if (!element) return false;
-  
-  const style = window.getComputedStyle(element);
-  return style.display === 'none' || 
-         style.visibility === 'hidden' || 
-         style.opacity === '0';
-}
-
-// 스크립트나 스타일 태그 내부인지 확인 (네이버 특화 필터링 추가)
-function isInScriptOrStyle(node) {
-  let parent = node.parentNode;
-  while (parent && parent.nodeName !== 'BODY') {
-    // 기본 제외 태그들
-    if (parent.nodeName === 'SCRIPT' || 
-        parent.nodeName === 'STYLE' || 
-        parent.nodeName === 'NOSCRIPT' ||
-        parent.nodeName === 'CODE' ||
-        parent.nodeName === 'PRE' ||
-        parent.nodeName === 'SVG') {
-      return true;
-    }
-    
-    // 요소 타입 체크 및 속성 기반 필터링
-    if (parent.nodeType === Node.ELEMENT_NODE) {
-      // contenteditable 속성이 있는 요소 제외
-      if (parent.hasAttribute && parent.hasAttribute('contenteditable')) {
-        return true;
-      }
-      
-      // 네이버 특화 제외 클래스/ID 패턴
-      const className = parent.className || '';
-      const id = parent.id || '';
-      
-      // 광고, 네비게이션, 메타데이터 관련 클래스/ID 제외
-      if (className.includes('nav') || className.includes('menu') || 
-          className.includes('header') || className.includes('footer') ||
-          className.includes('aside') || className.includes('gnb') ||
-          className.includes('lnb') || className.includes('shortcut') ||
-          className.includes('service_area') || className.includes('copyright') ||
-          id.includes('nav') || id.includes('menu') || 
-          id.includes('header') || id.includes('footer')) {
-        return true;
-      }
-      
-      // data-module 속성 체크 (네이버 모듈 시스템)
-      const dataModule = parent.getAttribute && parent.getAttribute('data-module');
-      if (dataModule && (dataModule.includes('nav') || dataModule.includes('menu'))) {
-        return true;
-      }
-    }
-    
-    parent = parent.parentNode;
-  }
-  return false;
-}
-
-// 동적 콘텐츠 감시 시작 (현재 비활성화됨 - API 호출 과다 방지)
-function startObserving() {
-  // 동적 콘텐츠 번역 기능을 일시적으로 비활성화
-  // 네이버 같은 사이트에서 과도한 API 호출을 방지하기 위함
-  console.log('[Gemini Translator] MutationObserver가 비활성화되었습니다. (API 호출 과다 방지)');
-  return;
-  
-  // 이미 MutationObserver가 설정되어 있으면 중복 설정 방지
-  if (window._translationObserver) {
-    return;
-  }
-  
-  // 디바운스 타이머
-  let debounceTimer = null;
-  
-  // MutationObserver 설정
-  const observer = new MutationObserver((mutations) => {
-    // 번역되지 않은 상태에서는 무시
-    if (!isTranslated) {
-      return;
-    }
-    
-    // 텍스트 노드 변화만 감지하고 중복 처리 방지
-    const relevantMutations = mutations.filter(mutation => 
-      mutation.type === 'childList' && 
-      mutation.addedNodes.length > 0 &&
-      Array.from(mutation.addedNodes).some(node => 
-        node.nodeType === Node.ELEMENT_NODE && 
-        !node.hasAttribute('data-translated')
-      )
-    );
-    
-    if (relevantMutations.length === 0) {
-      return;
-    }
-    
-    // 디바운스 처리 (1초로 증가)
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(async () => {
-      try {
-        // 새로 추가된 노드들을 모두 수집
-        const allNewNodes = [];
-        relevantMutations.forEach(mutation => {
-          mutation.addedNodes.forEach(node => {
-            if (node.nodeType === Node.ELEMENT_NODE && !node.hasAttribute('data-translated')) {
-              allNewNodes.push(node);
-            }
-          });
-        });
-        
-        if (allNewNodes.length === 0) {
-          return;
-        }
-        
-        // 모든 새 노드에서 텍스트 수집 (한번에)
-        const allTexts = [];
-        const allNodes = [];
-        
-        allNewNodes.forEach(node => {
-          const textInfo = collectTextNodes(node);
-          allTexts.push(...textInfo.texts);
-          allNodes.push(...textInfo.nodes);
-          // 처리 완료 마킹
-          node.setAttribute('data-translated', 'true');
-        });
-        
-        if (allTexts.length === 0) {
-          return;
-        }
-        
-        // 설정 가져오기
-        const settings = await chrome.runtime.sendMessage({ type: 'GET_SETTINGS' });
-        
-        // 한번에 모든 텍스트 번역 요청
-        const response = await chrome.runtime.sendMessage({
-          type: 'TRANSLATE',
-          segments: allTexts,
-          targetLang: settings.targetLang || 'ko'
-        });
-        
-        if (response.error) {
-          console.error('동적 콘텐츠 번역 오류:', response.error);
-          return;
-        }
-        
-        // 번역 결과가 없는 경우 무시
-        if (!response.translations || response.translations.length === 0) {
-          return;
-        }
-        
-        // 번역 결과 적용 (안전하게)
-        applyTranslationsSafely(allNodes, response.translations);
-        
-      } catch (error) {
-        console.error('동적 콘텐츠 번역 처리 오류:', error);
-      }
-    }, 1000); // 1초로 증가
-  });
-  
-  // 문서 전체 감시 설정
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true
-  });
-  
-  // 참조 저장
-  window._translationObserver = observer;
-}
-
-// 메시지 리스너 설정
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === 'TRANSLATE_PAGE') {
-    // 비동기 처리를 위해 프로미스 처리
-    translatePage().then(result => {
-      sendResponse(result);
-    }).catch(error => {
-      sendResponse({ success: false, error: error.message });
-    });
-    return true; // 비동기 응답을 위해 true 반환
-  }
-  
-  if (message.type === 'TOGGLE_TRANSLATION') {
-    toggleTranslation();
-    sendResponse({ success: true });
-  }
-  
-  // 청크별 번역 결과 처리
-  if (message.type === 'CHUNK_TRANSLATED') {
-    // 청크가 처음이면 프로그레스 바 추가
-    if (message.chunkIndex === 0) {
-      addTranslationProgressBar();
-    }
-    
-    // 청크 번역 결과 적용
-    applyChunkTranslation(message.startIndex, message.translations, message.progress);
-    
-    // 진행상황 로그 (개발용)
-    console.log(`번역 진행상황: ${message.progress}% (청크 ${message.chunkIndex + 1})`);
-    
-    // 프로그레스 바 업데이트
-    if (window._translationProgressBar) {
-      window._translationProgressBar.style.width = `${message.progress}%`;
-    }
-    
-    // 마지막 청크인 경우 번역 완료 처리
-    if (message.isLastChunk) {
-      translationState.inProgress = false;
-      console.log('번역이 완료되었습니다.');
-      
-      // 프로그레스 바 완료 표시
-      if (window._translationProgressBar) {
-        window._translationProgressBar.style.width = '100%';
-        setTimeout(() => {
-          const container = document.getElementById('translation-progress-container');
-          if (container) {
-            container.style.opacity = '0';
-            container.style.transition = 'opacity 0.3s ease';
-            setTimeout(() => container.remove(), 300);
-          }
-        }, 500);
-      }
-      
-      // 최종 완료 메시지를 팝업에 전송 (팝업이 열려 있는 경우)
-      chrome.runtime.sendMessage({
-        type: 'TRANSLATION_COMPLETE',
-        tabId: chrome.runtime.id
-      });
-    }
-    
-    // 응답 완료
-    sendResponse({ success: true });
-    return true;
-  }
-  
-  // 번역 오류 처리
-  if (message.type === 'TRANSLATION_ERROR') {
-    translationState.inProgress = false;
-    console.error('번역 오류:', message.error);
-    
-    // 프로그레스 바 제거
-    const container = document.getElementById('translation-progress-container');
-    if (container) {
-      container.remove();
-    }
-    
-    // 오류 표시
-    alert(`번역 오류: ${message.error}`);
-    
-    sendResponse({ success: false });
-    return true;
-  }
-  
-  // 선택 번역 토글 처리
-  if (message.type === 'SELECTION_TRANSLATE_TOGGLE') {
-    selectionTranslateEnabled = message.enabled;
-    sendResponse({ success: true });
-    return true;
-  }
-  
-  // 확장 프로그램 활성화 토글 처리
-  if (message.type === 'EXTENSION_ENABLED_TOGGLE') {
-    extensionEnabled = message.enabled;
-    console.log('[Gemini Translator] Extension enabled changed:', extensionEnabled);
-    sendResponse({ success: true });
-    return true;
-  }
-});
-
-// 선택 텍스트 번역 기능을 위한 변수
-let lastCtrlCTime = 0;
-let selectionTranslateEnabled = true;
-let extensionEnabled = true; // 확장 프로그램 활성화 상태
-let translationTooltip = null;
-let isTranslating = false; // 번역 중복 방지 플래그
-
-console.log('[Gemini Translator] Selection translation variables initialized:', {
-  lastCtrlCTime,
-  selectionTranslateEnabled,
-  translationTooltip,
-  isTranslating
-});
-
-// 번역 툴팁 생성 함수
-function createTranslationTooltip() {
-  const tooltip = document.createElement('div');
-  tooltip.id = 'gemini-translation-tooltip';
-  tooltip.style.cssText = `
+  responsePopup = document.createElement('div');
+  responsePopup.id = 'gemini-response-popup';
+  responsePopup.style.cssText = `
     position: absolute;
+    left: ${x}px;
+    top: ${y}px;
     z-index: 999999;
-    background-color: #1a73e8;
-    color: white;
-    padding: 8px 12px;
-    border-radius: 6px;
-    font-size: 14px;
-    font-family: Arial, sans-serif;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-    opacity: 0;
-    transition: opacity 0.2s ease;
-    pointer-events: none;
-    max-width: 300px;
-    word-wrap: break-word;
+    background: white;
+    color: #333;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    max-width: 500px;
+    min-width: 300px;
+    border: 1px solid rgba(0,0,0,0.1);
+    line-height: 1.6;
   `;
-  document.body.appendChild(tooltip);
-  return tooltip;
+  
+  // 응답 내용
+  const responseContent = document.createElement('div');
+  responseContent.style.cssText = `
+    font-size: 14px;
+    margin-bottom: 16px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 300px;
+    overflow-y: auto;
+  `;
+  responseContent.textContent = answer;
+  
+  // 닫기 버튼
+  const closeButton = document.createElement('button');
+  closeButton.textContent = '닫기';
+  closeButton.style.cssText = `
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    background: #667eea;
+    color: white;
+    font-size: 13px;
+    cursor: pointer;
+    float: right;
+    transition: background 0.2s;
+  `;
+  closeButton.addEventListener('click', hideResponsePopup);
+  
+  responsePopup.appendChild(responseContent);
+  responsePopup.appendChild(closeButton);
+  
+  document.body.appendChild(responsePopup);
+  
+  // 화면 경계 조정
+  adjustPopupPosition(responsePopup);
 }
 
-// 툴팁 위치 업데이트 함수
-function updateTooltipPosition(tooltip, selection) {
-  const range = selection.getRangeAt(0);
-  const rect = range.getBoundingClientRect();
+// 팝업 위치 조정 (화면 경계 처리)
+function adjustPopupPosition(popup) {
+  const rect = popup.getBoundingClientRect();
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
   
-  tooltip.style.left = `${rect.left + window.scrollX}px`;
-  tooltip.style.top = `${rect.bottom + window.scrollY + 5}px`;
-  
-  // 화면 밖으로 나가는 경우 위치 조정
-  const tooltipRect = tooltip.getBoundingClientRect();
-  if (tooltipRect.right > window.innerWidth) {
-    tooltip.style.left = `${window.innerWidth - tooltipRect.width - 10}px`;
-  }
-  if (tooltipRect.bottom > window.innerHeight) {
-    tooltip.style.top = `${rect.top + window.scrollY - tooltipRect.height - 5}px`;
-  }
-}
-
-// 선택 텍스트 번역 함수
-async function translateSelection() {
-  console.log('[Gemini Translator] ========== translateSelection() STARTED ==========');
-  
-  // 확장 프로그램 활성화 상태 확인
-  if (!extensionEnabled) {
-    console.log('[Gemini Translator] Selection translation blocked: extension is disabled');
-    return;
+  // 오른쪽 경계 처리
+  if (rect.right > viewportWidth - 20) {
+    popup.style.left = `${viewportWidth - rect.width - 20}px`;
   }
   
-  const selection = window.getSelection();
-  const selectedText = selection.toString().trim();
-  
-  console.log('[Gemini Translator] Selected text:', selectedText);
-  
-  if (!selectedText) {
-    console.log('[Gemini Translator] No text selected');
-    return;
+  // 왼쪽 경계 처리
+  if (rect.left < 20) {
+    popup.style.left = '20px';
   }
   
-  // 활성 요소 확인 (input 또는 textarea인지)
-  const activeElement = document.activeElement;
-  const isInputField = activeElement && 
-    (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA' || activeElement.contentEditable === 'true');
+  // 아래쪽 경계 처리
+  if (rect.bottom > viewportHeight - 20) {
+    popup.style.top = `${viewportHeight - rect.height - 20}px`;
+  }
   
-  console.log('[Gemini Translator] Is input field:', isInputField);
-  
-  try {
-    // 설정 가져오기
-    const settings = await chrome.runtime.sendMessage({ type: 'GET_SETTINGS' });
-    
-    // 확장 프로그램 상태 업데이트
-    extensionEnabled = settings.extensionEnabled !== false;
-    
-    // 다시 한번 확인
-    if (!extensionEnabled) {
-      console.log('[Gemini Translator] Selection translation blocked: extension disabled in settings');
-      return;
-    }
-    
-    // 번역 요청
-    const response = await chrome.runtime.sendMessage({
-      type: 'TRANSLATE_SELECTION',
-      text: selectedText,
-      targetLang: settings.targetLang || 'en'
-    });
-    
-    console.log('[Gemini Translator] API response:', response);
-    
-    // API 응답이 null이거나 undefined인 경우 처리
-    if (!response) {
-      console.error('[Gemini Translator] No response from API');
-      showTranslationError('API 응답이 없습니다', isInputField);
-      return;
-    }
-    
-    if (response.error) {
-      console.log('[Gemini Translator] Translation error:', response.error);
-      showTranslationError(response.error, isInputField);
-    } else if (response.translation) {
-      const translatedText = response.translation.trim();
-      console.log('[Gemini Translator] Translated text:', translatedText);
-      
-      if (!translatedText) {
-        console.warn('[Gemini Translator] Empty translation received');
-        showTranslationError('빈 번역 결과', isInputField);
-        return;
-      }
-      
-      if (isInputField) {
-        // 입력 필드에서는 텍스트를 직접 교체
-        console.log('[Gemini Translator] Replacing text in input field...');
-        replaceSelectedText(activeElement, translatedText);
-      } else {
-        // 일반 텍스트에서는 툴팁으로 표시
-        showTranslationTooltip(translatedText, selection);
-      }
-    } else {
-      console.error('[Gemini Translator] Invalid response format:', response);
-      showTranslationError('잘못된 API 응답 형식', isInputField);
-    }
-  } catch (error) {
-    console.error('[Gemini Translator] Translation error:', error);
-    
-    // Extension context invalidated 에러 처리
-    if (error.message && (error.message.includes('Extension context invalidated') || 
-                         error.message.includes('Could not establish connection'))) {
-      console.warn('[Gemini Translator] Extension needs reload');
-      if (!isInputField) {
-        // selection이 여전히 유효한지 확인
-        try {
-          if (selection && selection.rangeCount > 0) {
-            showTranslationTooltip('확장 프로그램을 새로고침해주세요', selection, '#ff9800');
-          }
-        } catch (e) {
-          console.error('[Gemini Translator] Cannot show tooltip:', e);
-        }
-      }
-    } else {
-      const errorMsg = error.message || '알 수 없는 오류';
-      showTranslationError(errorMsg, isInputField);
-    }
+  // 위쪽 경계 처리
+  if (rect.top < 20) {
+    popup.style.top = '20px';
   }
 }
 
-// 입력 필드에서 선택된 텍스트 교체
-function replaceSelectedText(element, newText) {
-  console.log('[Gemini Translator] replaceSelectedText called with:', {
-    element: element.tagName,
-    newText: newText,
-    selectionStart: element.selectionStart,
-    selectionEnd: element.selectionEnd,
-    currentValue: element.value
-  });
-  
-  if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') {
-    const start = element.selectionStart;
-    const end = element.selectionEnd;
-    const value = element.value;
-    
-    console.log('[Gemini Translator] Before replacement:', {
-      start, end, value,
-      selectedText: value.substring(start, end)
-    });
-    
-    // 텍스트 교체
-    const newValue = value.substring(0, start) + newText + value.substring(end);
-    element.value = newValue;
-    
-    // 커서를 번역된 텍스트 끝으로 이동
-    const newCursorPos = start + newText.length;
-    element.selectionStart = element.selectionEnd = newCursorPos;
-    
-    console.log('[Gemini Translator] After replacement:', {
-      newValue: element.value,
-      newCursorPos: newCursorPos
-    });
-    
-    // change 이벤트 발생 (React 등의 프레임워크 호환성)
-    element.dispatchEvent(new Event('input', { bubbles: true }));
-    element.dispatchEvent(new Event('change', { bubbles: true }));
-    
-    console.log('[Gemini Translator] Text replaced in input field - COMPLETED');
-  } else if (element.contentEditable === 'true') {
-    // contentEditable 요소 처리
-    const selection = window.getSelection();
-    if (selection.rangeCount > 0) {
-      const range = selection.getRangeAt(0);
-      console.log('[Gemini Translator] ContentEditable - selected text:', range.toString());
-      
-      range.deleteContents();
-      range.insertNode(document.createTextNode(newText));
-      
-      // 커서를 번역된 텍스트 끝으로 이동
-      range.collapse(false);
-      selection.removeAllRanges();
-      selection.addRange(range);
-    }
-    
-    console.log('[Gemini Translator] Text replaced in contentEditable element - COMPLETED');
+// 질문 팝업 숨기기
+function hideQuestionPopup() {
+  if (questionPopup) {
+    questionPopup.remove();
+    questionPopup = null;
+    isQuestionUIOpen = false;
   }
 }
 
-// 툴팁으로 번역 결과 표시
-function showTranslationTooltip(text, selection, bgColor = '#1a73e8') {
-  // 기존 툴팁 제거
-  if (translationTooltip) {
-    translationTooltip.remove();
+// 응답 팝업 숨기기
+function hideResponsePopup() {
+  if (responsePopup) {
+    responsePopup.remove();
+    responsePopup = null;
   }
+}
+
+// 에러 메시지 표시
+function showErrorMessage(message) {
+  // 간단한 에러 알림
+  const errorPopup = document.createElement('div');
+  errorPopup.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 1000000;
+    background: #ff4444;
+    color: white;
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    font-size: 14px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    max-width: 300px;
+    word-break: break-word;
+  `;
+  errorPopup.textContent = message;
   
-  // 새 툴팁 생성
-  translationTooltip = createTranslationTooltip();
-  translationTooltip.textContent = text;
-  translationTooltip.style.backgroundColor = bgColor;
-  translationTooltip.style.opacity = '1';
-  updateTooltipPosition(translationTooltip, selection);
+  document.body.appendChild(errorPopup);
   
-  // 3초 후 툴팁 제거
+  // 3초 후 자동 제거
   setTimeout(() => {
-    if (translationTooltip) {
-      translationTooltip.style.opacity = '0';
-      setTimeout(() => {
-        translationTooltip?.remove();
-        translationTooltip = null;
-      }, 200);
-    }
+    errorPopup.remove();
   }, 3000);
 }
 
-// 번역 오류 표시
-function showTranslationError(error, isInputField) {
-  if (!isInputField) {
-    const selection = window.getSelection();
-    showTranslationTooltip('번역 오류', selection, '#d33');
-  } else {
-    // 입력 필드에서는 콘솔에만 오류 표시
-    console.error('[Gemini Translator] Translation failed:', error);
-  }
-}
-
-// Ctrl+C+C 감지를 위한 키보드 이벤트 리스너 (capture 단계에서 실행하여 구글의 이벤트 핸들러보다 우선)
-// 다중 레벨에서 이벤트 캡처하여 더 확실하게 처리
-const handleKeydown = async (e) => {
-  // Ctrl+C 감지 (대소문자 모두 처리) - 다른 키는 무시
-  if (e.ctrlKey && (e.key === 'c' || e.key === 'C')) {
-    console.log('[Gemini Translator] Ctrl+C pressed, extensionEnabled:', extensionEnabled, 'selectionTranslateEnabled:', selectionTranslateEnabled);
-    
-    // 확장 프로그램이나 선택 번역이 비활성화된 경우 아무것도 하지 않음
-    if (!extensionEnabled || !selectionTranslateEnabled) {
-      console.log('[Gemini Translator] Extension or selection translate disabled, ignoring');
-      return; // 정상적인 복사 동작 허용
-    }
-    
-    // 텍스트가 선택되어 있는지 확인
-    const selectedText = window.getSelection().toString().trim();
-    console.log('[Gemini Translator] Selected text:', selectedText ? `"${selectedText}"` : 'none');
-    
-    // 선택된 텍스트가 없으면 처리하지 않음
-    if (!selectedText) {
-      console.log('[Gemini Translator] No text selected, ignoring Ctrl+C');
-      return; // 정상적인 복사 동작 허용
-    }
-    
-    const currentTime = Date.now();
-    
-    // 이전 Ctrl+C와의 시간 차이가 500ms 이내이고, 이전 시간이 기록되어 있으면 번역 실행
-    if (lastCtrlCTime > 0 && currentTime - lastCtrlCTime < 500) {
-      // 이미 번역 중이면 무시
-      if (isTranslating) {
-        console.log('[Gemini Translator] Translation already in progress, ignoring...');
-        return;
-      }
-      
-      console.log('[Gemini Translator] Double Ctrl+C detected, translating...');
-      e.preventDefault(); // 복사 동작 방지
-      e.stopPropagation(); // 이벤트 전파 차단
-      e.stopImmediatePropagation(); // 다른 핸들러 실행 차단
-      
-      isTranslating = true; // 번역 시작 플래그 설정
-      
-      try {
-        await translateSelection();
-        console.log('[Gemini Translator] Translation completed');
-      } catch (error) {
-        console.error('[Gemini Translator] Translation failed:', error);
-      } finally {
-        isTranslating = false; // 번역 완료 후 플래그 해제
-      }
-      
-      lastCtrlCTime = 0; // 리셋
-    } else {
-      console.log('[Gemini Translator] First Ctrl+C detected - allowing normal copy');
-      lastCtrlCTime = currentTime;
-      // 첫 번째 Ctrl+C는 정상적인 복사 동작을 허용 (preventDefault 하지 않음)
-      // return을 사용하지 않고 그냥 통과시킴
-    }
-  }
-};
-
-// 이벤트 리스너 등록
-console.log('[Gemini Translator] Registering event listeners...');
-
-// 일반 단계에서 이벤트 리스너 등록 (capture=false로 변경)
-document.addEventListener('keydown', handleKeydown, false);
-
-console.log('[Gemini Translator] Event listeners registered successfully');
-
-// 클릭 시 툴팁 제거
-document.addEventListener('click', () => {
-  if (translationTooltip) {
-    translationTooltip.style.opacity = '0';
-    setTimeout(() => {
-      translationTooltip?.remove();
-      translationTooltip = null;
-    }, 200);
-  }
-});
-
-// 페이지 로드 완료 시 준비 완료 메시지 전송 및 설정 로드
-let isInitialized = false; // 중복 초기화 방지
-
-const initializeExtension = async () => {
-  if (isInitialized) {
-    console.log('[Gemini Translator] Already initialized, skipping...');
+// 클릭 시 팝업 닫기 (팝업 외부 클릭) - 개선된 버전
+document.addEventListener('click', (event) => {
+  // 팝업 내부 클릭은 무시
+  if (event.target.closest('#gemini-question-popup, #gemini-response-popup')) {
     return;
   }
   
-  isInitialized = true;
-  console.log('[Gemini Translator] Initializing extension...');
+  // 외부 클릭 시 팝업 닫기
+  if (questionPopup) {
+    hideQuestionPopup();
+    // 선택도 해제
+    try {
+      window.getSelection().removeAllRanges();
+    } catch (error) {
+      console.warn('[Gemini Assistant] Could not clear selection:', error);
+    }
+  }
   
-  chrome.runtime.sendMessage({ type: 'CONTENT_READY' });
-  
-  // 확장 프로그램 설정 로드
+  if (responsePopup) {
+    hideResponsePopup();
+  }
+}, true); // capture 단계에서 처리
+
+// ESC 키로 팝업 닫기
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    hideQuestionPopup();
+    hideResponsePopup();
+  }
+});
+
+// 메시지 리스너
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'EXTENSION_ENABLED_TOGGLE') {
+    extensionEnabled = message.enabled;
+    if (!extensionEnabled) {
+      hideQuestionPopup();
+      hideResponsePopup();
+    }
+    sendResponse({ success: true });
+    return true;
+  }
+});
+
+// 확장 프로그램 초기화
+async function initializeExtension() {
   try {
     const settings = await chrome.runtime.sendMessage({ type: 'GET_SETTINGS' });
-    if (settings.selectionTranslateEnabled !== undefined) {
-      selectionTranslateEnabled = settings.selectionTranslateEnabled;
-    }
-    if (settings.extensionEnabled !== undefined) {
-      extensionEnabled = settings.extensionEnabled;
-    } else {
-      extensionEnabled = true; // 기본값
-    }
-    console.log('[Gemini Translator] Settings loaded:', settings);
+    extensionEnabled = settings.extensionEnabled !== false;
+    console.log('[Gemini Assistant] Extension initialized:', { extensionEnabled });
   } catch (error) {
-    console.error('설정 로드 오류:', error);
-    isInitialized = false; // 오류 시 재시도 허용
+    console.error('[Gemini Assistant] Initialization error:', error);
   }
-};
+}
 
-// 여러 시점에서 초기화 시도
+// 초기화 실행
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', initializeExtension);
 } else {
   initializeExtension();
 }
-window.addEventListener('load', initializeExtension);

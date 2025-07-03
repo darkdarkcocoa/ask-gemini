@@ -1,5 +1,8 @@
+// Gemini 웹 AI 어시스턴트 - Background Script
+console.log('[Gemini Assistant] Background script loaded');
+
 // Gemini API 엔드포인트
-const ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-04-17:generateContent";
+const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
 // API 키 가져오기
 async function getApiKey() {
@@ -7,343 +10,193 @@ async function getApiKey() {
   return data.apiKey || '';
 }
 
-// 세그먼트를 청크로 나누기
-function chunkSegments(segments, maxChunkSize = 8000) { // 청크 크기를 8KB로 증가 (API 호출 감소)
-  const chunks = [];
-  let currentChunk = [];
-  let currentSize = 0;
-
-  for (const segment of segments) {
-    if (currentSize + segment.length > maxChunkSize && currentChunk.length > 0) {
-      chunks.push([...currentChunk]);
-      currentChunk = [];
-      currentSize = 0;
-    }
-    
-    currentChunk.push(segment);
-    currentSize += segment.length;
-  }
-
-  if (currentChunk.length > 0) {
-    chunks.push(currentChunk);
-  }
-
-  return chunks;
-}
-
-// 번역 프롬프트 생성
-function buildPrompt(segments, targetLang) {
-  return `Please translate the following text segments from any language to ${targetLang}. 
-Return ONLY the translations in a JSON array format, maintaining the exact same order as the input segments.
-Do not include any explanations, notes, or additional text outside the JSON array.
-
-Input segments:
-${segments.map((s, i) => `[${i}] ${s}`).join('\n\n')}`;
-}
-
-// Gemini API 응답 파싱
-function parseGeminiResponse(response) {
-  try {
-    if (!response.candidates || response.candidates.length === 0) {
-      console.error('No candidates in Gemini response:', response);
-      return [];
-    }
-
-    const content = response.candidates[0].content;
-    if (!content || !content.parts || content.parts.length === 0) {
-      console.error('No content parts in Gemini response:', response);
-      return [];
-    }
-
-    const text = content.parts[0].text;
-    // JSON 배열 추출 (텍스트에서 [] 사이의 내용을 찾음)
-    const jsonMatch = text.match(/\[[\s\S]*\]/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
-    } else {
-      // 일반 텍스트 응답인 경우 줄바꿈으로 분리
-      return text.split('\n').filter(line => line.trim());
-    }
-  } catch (error) {
-    console.error('Error parsing Gemini response:', error, response);
-    return [];
-  }
-}
-
 // 메시지 리스너 설정
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === 'TRANSLATE') {
-    handleTranslation(message, sender, sendResponse);
+  console.log('[Gemini Assistant] Message received:', message.type);
+  
+  // 질문 처리
+  if (message.type === 'ASK_QUESTION') {
+    handleQuestion(message, sender, sendResponse);
     return true; // 비동기 응답을 위해 true 반환
   }
   
+  // 설정 저장
   if (message.type === 'SAVE_SETTINGS') {
     chrome.storage.sync.set({
       apiKey: message.apiKey,
-      sourceLang: message.sourceLang,
-      targetLang: message.targetLang,
-      selectionTranslateEnabled: message.selectionTranslateEnabled,
       extensionEnabled: message.extensionEnabled
     });
     sendResponse({ success: true });
   }
   
+  // 설정 가져오기
   if (message.type === 'GET_SETTINGS') {
-    chrome.storage.sync.get(['apiKey', 'sourceLang', 'targetLang', 'selectionTranslateEnabled', 'extensionEnabled'], (data) => {
+    chrome.storage.sync.get(['apiKey', 'extensionEnabled'], (data) => {
       sendResponse({
         apiKey: data.apiKey || '',
-        sourceLang: data.sourceLang || 'auto',
-        targetLang: data.targetLang || 'ko',
-        selectionTranslateEnabled: data.selectionTranslateEnabled !== false, // 기본값 true
         extensionEnabled: data.extensionEnabled !== false // 기본값 true
       });
     });
     return true; // 비동기 응답을 위해 true 반환
   }
-  
-  // 선택 텍스트 번역 처리
-  if (message.type === 'TRANSLATE_SELECTION') {
-    handleSelectionTranslation(message, sender, sendResponse);
-    return true; // 비동기 응답을 위해 true 반환
-  }
 });
 
-// 선택 텍스트 번역 함수
-async function handleSelectionTranslation(message, sender, sendResponse) {
+// 질문 처리 함수
+async function handleQuestion(message, sender, sendResponse) {
   try {
-    const { text, targetLang = 'en' } = message;
+    console.log('[Gemini Assistant] Processing question:', message.question);
+    
+    const { selectedText, question } = message;
     const apiKey = await getApiKey();
     
+    // API 키 검증
     if (!apiKey) {
-      sendResponse({ error: 'API 키가 설정되지 않았습니다.' });
+      console.error('[Gemini Assistant] No API key found');
+      sendResponse({ error: 'API 키가 설정되지 않았습니다. 확장 프로그램 설정에서 API 키를 입력해주세요.' });
       return;
     }
     
-    if (!text || text.trim() === '') {
-      sendResponse({ error: '번역할 텍스트가 없습니다.' });
+    // 입력 검증
+    if (!selectedText || !question) {
+      sendResponse({ error: '선택된 텍스트와 질문이 필요합니다.' });
       return;
     }
     
-    // 번역 프롬프트 생성 (언어 코드를 실제 언어명으로 매핑)
-    const languageNames = {
-      'en': 'English',
-      'ko': 'Korean',
-      'ja': 'Japanese', 
-      'zh': 'Chinese',
-      'fr': 'French',
-      'de': 'German',
-      'es': 'Spanish',
-      'ru': 'Russian'
-    };
+    // 너무 긴 텍스트 검증
+    if (selectedText.length > 3000) {
+      sendResponse({ error: '선택된 텍스트가 너무 깁니다. (최대 3000자)' });
+      return;
+    }
     
-    const targetLanguageName = languageNames[targetLang] || 'English';
+    // 프롬프트 생성
+    const prompt = buildQuestionPrompt(selectedText, question);
     
-    const prompt = `You are a professional translator. Translate the following text from any language to ${targetLanguageName}.
-
-IMPORTANT RULES:
-- You MUST translate the text, do not return the original text
-- Return ONLY the translated text, no explanations or additional content
-- If the text is already in ${targetLanguageName}, translate it to a different language that makes sense
-- Maintain the original meaning and tone
-
-Text to translate: "${text}"
-
-Translation:`;
+    console.log('[Gemini Assistant] Making API request...');
     
-    console.log('Selection translation prompt:', prompt);
+    // API 요청
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, 30000); // 30초 타임아웃
     
-    // Gemini API 호출
-    const response = await fetch(`${ENDPOINT}?key=${apiKey}`, {
+    const response = await fetch(GEMINI_ENDPOINT, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'x-goog-api-key': apiKey,
+        'Content-Type': 'application/json'
+      },
       body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        contents: [{
+          parts: [{ text: prompt }]
+        }],
         generationConfig: {
-          temperature: 0.1,
+          temperature: 0.3,
           topP: 0.9,
           topK: 20,
-          maxOutputTokens: 1000
+          maxOutputTokens: 2048
         }
-      })
+      }),
+      signal: controller.signal
     });
     
+    clearTimeout(timeoutId);
+    
+    // 응답 검증
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Selection translation API error:', errorText);
-      throw new Error(`Gemini API 오류: ${response.status}`);
+      console.error('[Gemini Assistant] API error:', response.status, errorText);
+      
+      let errorMessage = `API 오류: ${response.status}`;
+      if (response.status === 400) {
+        errorMessage = 'API 요청 형식 오류. API 키를 확인해주세요.';
+      } else if (response.status === 403) {
+        errorMessage = 'API 키가 유효하지 않거나 권한이 없습니다.';
+      } else if (response.status === 429) {
+        errorMessage = 'API 요청 한도 초과. 잠시 후 다시 시도해주세요.';
+      }
+      
+      sendResponse({ error: errorMessage });
+      return;
     }
     
+    // 응답 파싱
     const data = await response.json();
+    console.log('[Gemini Assistant] API response received');
     
-    // 응답에서 번역된 텍스트 추출
-    let translation = '';
-    try {
-      if (data && data.candidates && Array.isArray(data.candidates) && data.candidates.length > 0) {
-        const candidate = data.candidates[0];
-        if (candidate && candidate.content && candidate.content.parts && Array.isArray(candidate.content.parts)) {
-          const part = candidate.content.parts[0];
-          if (part && typeof part.text === 'string') {
-            translation = part.text.trim();
-          }
-        }
-      }
-      
-      if (!translation) {
-        console.error('Empty translation result from API:', data);
-        throw new Error('번역 결과가 비어있습니다.');
-      }
-      
-      console.log('Selection translation successful:', translation);
-      sendResponse({ translation });
-    } catch (parseError) {
-      console.error('Error parsing API response:', parseError, data);
-      throw new Error('API 응답 파싱 오류: ' + parseError.message);
+    const answer = extractAnswer(data);
+    
+    if (!answer) {
+      console.error('[Gemini Assistant] No answer extracted from response');
+      sendResponse({ error: '응답을 처리할 수 없습니다.' });
+      return;
     }
+    
+    console.log('[Gemini Assistant] Question processed successfully');
+    sendResponse({ answer });
+    
   } catch (error) {
-    console.error('Selection translation error:', error);
-    sendResponse({ error: error.message });
+    console.error('[Gemini Assistant] Error processing question:', error);
+    
+    let errorMessage = '오류가 발생했습니다.';
+    if (error.name === 'AbortError') {
+      errorMessage = '요청 시간이 초과되었습니다. 다시 시도해주세요.';
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
+    sendResponse({ error: errorMessage });
   }
 }
 
-// 번역 처리 함수
-async function handleTranslation(message, sender, sendResponse) {
+// 질문 프롬프트 생성
+function buildQuestionPrompt(selectedText, question) {
+  return `당신은 도움이 되는 AI 어시스턴트입니다. 사용자가 웹페이지에서 선택한 텍스트에 대해 질문하고 있습니다.
+
+선택된 텍스트:
+"""
+${selectedText}
+"""
+
+사용자의 질문:
+"""
+${question}
+"""
+
+위의 선택된 텍스트를 참고하여 사용자의 질문에 정확하고 도움이 되는 답변을 해주세요. 
+
+답변 규칙:
+- 선택된 텍스트의 내용을 기반으로 답변하세요
+- 명확하고 이해하기 쉽게 설명해주세요
+- 한국어로 답변해주세요
+- 너무 길지 않게 핵심만 간결하게 답변해주세요
+- 만약 선택된 텍스트만으로는 충분한 답변을 할 수 없다면, 그 점을 명시하고 가능한 범위에서 답변해주세요
+
+답변:`;
+}
+
+// 응답에서 답변 추출
+function extractAnswer(data) {
   try {
-    const { segments, targetLang = 'ko' } = message;
-    const apiKey = await getApiKey();
-    
-    if (!apiKey) {
-      sendResponse({ error: 'API 키가 설정되지 않았습니다.' });
-      return;
+    if (!data.candidates || data.candidates.length === 0) {
+      console.error('[Gemini Assistant] No candidates in response');
+      return null;
     }
     
-    if (!segments || segments.length === 0) {
-      sendResponse({ translations: [] });
-      return;
+    const candidate = data.candidates[0];
+    if (!candidate.content || !candidate.content.parts || candidate.content.parts.length === 0) {
+      console.error('[Gemini Assistant] No content parts in response');
+      return null;
     }
     
-    // 변수 초기화
-    let completedChunks = 0;
-    const chunkedSegments = chunkSegments(segments);
-    const totalChunks = chunkedSegments.length;
-    
-    // 진행상황 처리를 위한 추가 인자
-    sendResponse({ 
-      status: 'processing', 
-      progress: 0,
-      totalChunks, 
-      totalSegments: segments.length 
-    });
-    
-    // 최대 동시 요청 개수
-    const MAX_CONCURRENCY = 3;
-    
-    // 청크 번역 함수
-    async function translateChunk(chunk, chunkIndex) {
-      // 시작 인덱스 계산
-      const startIndex = chunkedSegments.slice(0, chunkIndex).flat().length;
-      
-      try {
-        const prompt = buildPrompt(chunk, targetLang);
-        const response = await fetch(`${ENDPOINT}?key=${apiKey}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text: prompt }] }],
-            generationConfig: {
-              temperature: 0.2,
-              topP: 0.8,
-              topK: 40
-            }
-          })
-        });
-        
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error(`Chunk ${chunkIndex} API error:`, errorText);
-          throw new Error(`Gemini API 오류: ${response.status} ${response.statusText}`);
-        }
-        
-        const data = await response.json();
-        const translations = parseGeminiResponse(data);
-        
-        // 번역 결과 처리
-        let chunkResults = [];
-        if (translations.length === chunk.length) {
-          chunkResults = translations;
-        } else {
-          console.warn(`Chunk ${chunkIndex} translation count mismatch:`, chunk.length, translations.length);
-          // 부족한 부분은 원본으로 채움
-          for (let i = 0; i < chunk.length; i++) {
-            chunkResults.push(translations[i] || chunk[i]);
-          }
-        }
-        
-        // 진행상황 업데이트
-        completedChunks++;
-        const progress = Math.round((completedChunks / totalChunks) * 100);
-        
-        // 번역 결과를 즉시 탭에 전송
-        chrome.tabs.sendMessage(sender.tab.id, {
-          type: 'CHUNK_TRANSLATED',
-          chunkIndex,
-          startIndex,
-          translations: chunkResults,
-          progress,
-          isLastChunk: completedChunks === totalChunks
-        });
-        
-        return chunkResults;
-      } catch (error) {
-        console.error(`Error translating chunk ${chunkIndex}:`, error);
-        // 오류 발생 시 원본 반환
-        return chunk;
-      }
+    const text = candidate.content.parts[0].text;
+    if (!text || !text.trim()) {
+      console.error('[Gemini Assistant] Empty response text');
+      return null;
     }
     
-    // 병렬 번역 실행
-    const promises = [];
-    const processNextChunks = async (startIdx) => {
-      let idx = startIdx;
-      
-      // 남은 청크가 있는 동안 진행
-      while (idx < chunkedSegments.length) {
-        const chunkIdx = idx++;
-        const promise = translateChunk(chunkedSegments[chunkIdx], chunkIdx);
-        promises.push(promise);
-        
-        // 동시성 제한에 도달했다면 기다림
-        if (promises.length >= MAX_CONCURRENCY) {
-          await Promise.any(promises.map(p => p.catch(e => e)));
-          // 완료된 프로미스 제거
-          const resolvedIndex = await Promise.allSettled(promises)
-            .then(results => results.findIndex(r => r.status === 'fulfilled'));
-          
-          if (resolvedIndex !== -1) {
-            promises.splice(resolvedIndex, 1);
-          }
-        }
-      }
-      
-      // 모든 남은 프로미스 완료 대기
-      await Promise.allSettled(promises);
-    };
-    
-    // 병렬 처리 시작
-    await processNextChunks(0);
-    
-    // 완료 메시지 전송
-    chrome.tabs.sendMessage(sender.tab.id, {
-      type: 'TRANSLATION_COMPLETE'
-    });
+    return text.trim();
   } catch (error) {
-    console.error('Translation error:', error);
-    try {
-      chrome.tabs.sendMessage(sender.tab.id, {
-        type: 'TRANSLATION_ERROR',
-        error: error.message
-      });
-    } catch (e) {
-      console.error('Failed to send error message:', e);
-    }
+    console.error('[Gemini Assistant] Error extracting answer:', error);
+    return null;
   }
 }
