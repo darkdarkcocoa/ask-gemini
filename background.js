@@ -85,7 +85,7 @@ async function handleQuestion(message, sender, sendResponse) {
       method: 'POST',
       headers: {
         'x-goog-api-key': apiKey,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json; charset=utf-8'
       },
       body: JSON.stringify({
         contents: [{

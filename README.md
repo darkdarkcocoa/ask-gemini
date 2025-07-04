@@ -1,4 +1,4 @@
-# 🤖 Gemini Web Assistant
+# 🤖 Ask Gemini
 
 > 🚀 AI-powered web assistant that answers questions about selected text using Google's Gemini API. Your intelligent reading companion for the web!
 
@@ -18,7 +18,7 @@
 1. Clone or download this repository
 2. Open Chrome and navigate to `chrome://extensions/`
 3. Enable "Developer mode" in the top-right corner
-4. Click "Load unpacked" and select the `gemini-web-assistant` folder
+4. Click "Load unpacked" and select the `ask-gemini` folder
 
 ### 🛒 From Chrome Web Store
 
@@ -95,7 +95,7 @@ This extension:
 ### 📁 Project Structure
 
 ```
-gemini-web-assistant/
+ask-gemini/
 ├── assets/              # Icons and images
 ├── popup/               # Extension popup UI
 │   ├── popup.html       # Popup interface
@@ -145,7 +145,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## 📬 Contact
 
-Project Link: [https://github.com/darkdarkcocoa/gemini-web-assistant](https://github.com/darkdarkcocoa/gemini-web-assistant)
+Project Link: [https://github.com/darkdarkcocoa/ask-gemini](https://github.com/darkdarkcocoa/ask-gemini)
 
 ---
 
