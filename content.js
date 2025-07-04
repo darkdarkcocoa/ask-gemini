@@ -22,7 +22,12 @@ const texts = {
     processingButton: '처리 중...',
     extensionReloadRequired: '확장 프로그램을 새로 고침해야 합니다. 페이지를 새로 고침하거나 확장 프로그램을 다시 로드해주세요.',
     genericError: '오류가 발생했습니다',
-    noResponse: '응답을 받을 수 없습니다.'
+    noResponse: '응답을 받을 수 없습니다.',
+    // 퀵 액션 관련 텍스트
+    quickActionWhat: '이것이 무엇인지 알려주세요',
+    quickActionTranslate: '이것을 번역해주세요',
+    quickActionWhatTooltip: '선택한 텍스트가 무엇인지 설명해달라고 질문합니다',
+    quickActionTranslateTooltip: '선택한 텍스트를 번역해달라고 질문합니다'
   },
   en: {
     questionPlaceholder: 'What would you like to know about this text?',
@@ -32,7 +37,12 @@ const texts = {
     processingButton: 'Processing...',
     extensionReloadRequired: 'Extension needs to be refreshed. Please reload the page or reload the extension.',
     genericError: 'An error has occurred',
-    noResponse: 'Unable to get a response.'
+    noResponse: 'Unable to get a response.',
+    // 퀵 액션 관련 텍스트
+    quickActionWhat: 'What is this?',
+    quickActionTranslate: 'Please translate this',
+    quickActionWhatTooltip: 'Ask what the selected text is about',
+    quickActionTranslateTooltip: 'Ask to translate the selected text'
   }
 };
 
@@ -184,6 +194,85 @@ function showQuestionPopup(x, y) {
   `;
   selectedTextPreview.textContent = `"${currentSelectedText.substring(0, 150)}${currentSelectedText.length > 150 ? '...' : ''}"`
   
+  // 퀵 액션 아이콘 컨테이너
+  const quickActionContainer = document.createElement('div');
+  quickActionContainer.style.cssText = `
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+    justify-content: center;
+  `;
+  
+  // 퀵 액션 함수
+  const executeQuickAction = (question) => {
+    questionInput.value = question;
+    handleQuestion();
+  };
+  
+  // "무엇인지 알려달라" 아이콘
+  const whatIcon = document.createElement('button');
+  whatIcon.innerHTML = '❓';
+  whatIcon.title = getLocalizedText('quickActionWhatTooltip');
+  whatIcon.style.cssText = `
+    background: rgba(255,255,255,0.2);
+    border: none;
+    border-radius: 50%;
+    width: 36px;
+    height: 36px;
+    color: white;
+    font-size: 16px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  `;
+  whatIcon.addEventListener('mouseenter', () => {
+    whatIcon.style.background = 'rgba(255,255,255,0.3)';
+    whatIcon.style.transform = 'scale(1.1)';
+  });
+  whatIcon.addEventListener('mouseleave', () => {
+    whatIcon.style.background = 'rgba(255,255,255,0.2)';
+    whatIcon.style.transform = 'scale(1)';
+  });
+  whatIcon.addEventListener('click', () => {
+    executeQuickAction(getLocalizedText('quickActionWhat'));
+  });
+  
+  // "번역해달라" 아이콘
+  const translateIcon = document.createElement('button');
+  translateIcon.innerHTML = '🌐';
+  translateIcon.title = getLocalizedText('quickActionTranslateTooltip');
+  translateIcon.style.cssText = `
+    background: rgba(255,255,255,0.2);
+    border: none;
+    border-radius: 50%;
+    width: 36px;
+    height: 36px;
+    color: white;
+    font-size: 16px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  `;
+  translateIcon.addEventListener('mouseenter', () => {
+    translateIcon.style.background = 'rgba(255,255,255,0.3)';
+    translateIcon.style.transform = 'scale(1.1)';
+  });
+  translateIcon.addEventListener('mouseleave', () => {
+    translateIcon.style.background = 'rgba(255,255,255,0.2)';
+    translateIcon.style.transform = 'scale(1)';
+  });
+  translateIcon.addEventListener('click', () => {
+    executeQuickAction(getLocalizedText('quickActionTranslate'));
+  });
+  
+  // 퀵 액션 컨테이너에 아이콘들 추가
+  quickActionContainer.appendChild(whatIcon);
+  quickActionContainer.appendChild(translateIcon);
+  
   // 질문 입력 영역
   const questionInput = document.createElement('textarea');
   questionInput.placeholder = getLocalizedText('questionPlaceholder');
@@ -310,6 +399,7 @@ function showQuestionPopup(x, y) {
   buttonContainer.appendChild(askButton);
   
   questionPopup.appendChild(selectedTextPreview);
+  questionPopup.appendChild(quickActionContainer);
   questionPopup.appendChild(questionInput);
   questionPopup.appendChild(buttonContainer);
   

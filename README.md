@@ -4,12 +4,13 @@
 
 ## ✨ Features
 
-- 🎯 **Smart Text Selection**: Select any text on a webpage and ask questions about it
+- 🎯 **Smart Text Selection**: Select any text on a webpage and get instant AI assistance
 - 💬 **Context-Aware Answers**: Get intelligent responses based on the selected content
-- 🧠 **Powered by Gemini**: Leverages Google's advanced AI for accurate and helpful answers
-- ⚡ **Quick Access**: Press Ctrl+C twice or use the toolbar button for instant assistance
+- 🧠 **Powered by Gemini 2.5 Flash**: Leverages Google's latest AI model for accurate and helpful answers
+- ⚡ **Instant Access**: Simply select text and ask - no keyboard shortcuts needed!
 - 📖 **Reading Assistant**: Perfect for understanding complex articles, research papers, or any web content
-- 🎨 **Beautiful UI**: Clean, modern interface with smooth animations and dark mode support
+- 🎨 **Beautiful UI**: Clean, modern interface with gradient design and smooth animations
+- 🌐 **Multilingual Support**: Full Korean and English interface with auto-detection
 
 ## 🚀 Installation
 
@@ -29,19 +30,20 @@
 ### Getting Started
 1. After installation, click the extension icon in the Chrome toolbar
 2. Enter your Gemini API key (Get one from [Google AI Studio](https://makersuite.google.com/app/apikey))
-3. The extension is now ready to use!
+3. Choose your preferred language (Korean/English)
+4. The extension is now ready to use!
 
 ### Asking Questions About Selected Text
-1. **Method 1 - Keyboard Shortcut**:
-   - Select any text on a webpage
-   - Press Ctrl+C twice quickly (within 500ms)
-   - Type your question in the popup that appears
-   - Get instant AI-powered answers!
+1. **Select any text** on a webpage (5-2000 characters)
+2. **Question popup appears automatically** near your selection
+3. **Type your question** in the popup that appears
+4. **Get instant AI-powered answers** with contextual understanding!
 
-2. **Method 2 - Toolbar Button**:
-   - Select text on the page
-   - Click the extension icon
-   - Ask your question directly in the popup
+### Additional Features
+- **Settings Management**: Click the extension icon to access settings
+- **Language Switch**: Toggle between Korean and English interface
+- **Extension Toggle**: Quickly enable/disable the extension
+- **API Key Security**: Your API key is stored locally and never transmitted
 
 ### Example Use Cases
 - 📚 **Research**: "Summarize this paragraph in simple terms"
@@ -55,40 +57,53 @@
 ### 🏗️ Architecture
 
 - **Manifest V3**: Built with the latest Chrome extension standards
-- **Service Worker**: Handles API communication and background processing
-- **Content Script**: Manages text selection and user interactions
-- **Modern UI**: Responsive design with CSS Grid and Flexbox
+- **Service Worker**: Handles Gemini API communication with 30-second timeout
+- **Content Script**: Manages text selection with 50ms debouncing and smart positioning
+- **Modern UI**: Gradient design with backdrop blur effects and viewport-aware positioning
+- **Internationalization**: Comprehensive multilingual support system
 
 ### 🔄 How It Works
 
-1. The content script monitors text selection on web pages
-2. When triggered, it captures the selected text and context
-3. User's question and selected text are sent to Gemini API
-4. AI-generated response is displayed in an elegant popup
-5. All interactions are smooth and non-intrusive
+1. Content script detects text selection (5-2000 characters) with debouncing
+2. Question popup appears automatically near selected text with smart positioning
+3. User's question and selected text are sent to Gemini 2.5 Flash API
+4. AI-generated response is displayed in an elegant popup with proper Korean text encoding
+5. All interactions preserve text selection and maintain smooth user experience
 
 ### ⚡ Performance Features
 
-- **Efficient API Usage**: Smart request batching to minimize API calls
-- **Local Storage**: Caches settings and API key securely
-- **Lightweight**: Minimal impact on page performance
-- **Fast Response**: Optimized for quick AI responses
+- **Optimized Selection Detection**: 50ms debouncing for efficient event handling
+- **Smart Positioning**: Viewport boundary detection prevents off-screen popups
+- **Text Preservation**: Range cloning maintains selection during interaction
+- **Secure Storage**: Uses Chrome's sync storage for API key management
+- **Lightweight**: Minimal DOM impact with efficient CSS-in-JS styling
+- **Fast Response**: Optimized API requests with structured Korean prompts
+
+### 🛡️ Technical Specifications
+
+- **API Model**: Gemini 2.5 Flash (temperature: 0.3, topP: 0.9, maxOutputTokens: 2048)
+- **Text Limits**: 5-2000 character range for optimal processing
+- **Timeout**: 30-second API request timeout with comprehensive error handling
+- **Encoding**: UTF-8 charset for proper Korean text handling
+- **Performance**: 50ms debouncing, efficient event handling, minimal DOM impact
 
 ## ⚠️ Limitations
 
-- Requires a valid Gemini API key
+- Requires a valid Gemini API key (free tier available)
 - API rate limits apply (60 requests/minute for free tier)
 - Internet connection required for AI responses
 - Some websites may block content scripts
+- Text selection must be 5-2000 characters for processing
 
 ## 🔒 Privacy & Security
 
 This extension:
 - ✅ Only sends selected text to Gemini API when you ask a question
-- ✅ Stores API key locally using Chrome's secure storage
+- ✅ Stores API key locally using Chrome's secure sync storage
 - ✅ Never collects or transmits personal data
 - ✅ No analytics or tracking
-- ✅ Open source for full transparency
+- ✅ API key never leaves your device except for API calls
+- ✅ Open source for full transparency and security audit
 
 ## 💻 Development
 
@@ -96,25 +111,33 @@ This extension:
 
 ```
 ask-gemini/
-├── assets/              # Icons and images
+├── assets/              # Extension icons (16, 32, 48, 128px)
 ├── popup/               # Extension popup UI
-│   ├── popup.html       # Popup interface
-│   ├── popup.css        # Styles with dark mode
-│   └── popup.js         # Popup logic
-├── background.js        # Service worker for API calls
+│   ├── popup.html       # Settings interface
+│   ├── popup.css        # Modern gradient styles
+│   └── popup.js         # Settings management logic
+├── debug/               # Debug and diagnostic tools
+│   ├── debug-helper.js  # Enhanced logging system
+│   ├── diagnostic.js    # Comprehensive diagnostics
+│   ├── debug-content.js # Content script debugging
+│   └── translation-fix.js # Translation utilities
+├── background.js        # Service worker for Gemini API calls
 ├── content.js           # Content script for text selection
-├── manifest.json        # Extension configuration
+├── i18n.js             # Multilingual support system
+├── manifest.json        # Extension configuration (Manifest V3)
 ├── CLAUDE.md           # Development documentation
+├── TROUBLESHOOTING.md  # User troubleshooting guide
 └── README.md           # This file
 ```
 
 ### 🛠️ Key Technologies
 
-- Chrome Extension Manifest V3
-- Google Gemini API
-- Vanilla JavaScript (no frameworks)
-- Modern CSS with CSS Variables
-- Chrome Storage API
+- **Chrome Extension Manifest V3**: Latest extension standards
+- **Google Gemini 2.5 Flash API**: Advanced AI model with Korean optimization
+- **Vanilla JavaScript**: No frameworks, pure JS for performance
+- **Modern CSS**: Gradient designs, backdrop blur, CSS-in-JS
+- **Chrome Storage API**: Secure settings and API key management
+- **Internationalization**: Comprehensive multilingual support system
 
 ## 👥 Contributing
 
@@ -127,11 +150,14 @@ We welcome contributions! Here's how you can help:
 5. Open a Pull Request
 
 ### Ideas for Contributions
-- Add support for more languages
-- Implement conversation history
-- Add custom prompt templates
-- Improve UI/UX
-- Add keyboard shortcuts customization
+- Add support for more languages (Japanese, Chinese, Spanish, etc.)
+- Implement conversation history and context memory
+- Add custom prompt templates and AI personas
+- Improve UI/UX with additional themes and customization
+- Add keyboard shortcuts and hotkey customization
+- Implement offline mode with cached responses
+- Add support for other AI models (Claude, OpenAI, etc.)
+- Create browser compatibility for Firefox and Safari
 
 ## 📄 License
 
