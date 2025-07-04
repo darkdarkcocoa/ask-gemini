@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Gemini Web Assistant",
+  "name": "Ask Gemini",
   "version": "1.0.0",
-  "description": "AI assistant that answers questions about selected text using Gemini API",
+  "description": "Ask Gemini AI questions about any selected text on the web",
   "permissions": ["storage", "scripting", "tabs"],
   "host_permissions": [
     "https://generativelanguage.googleapis.com/*"

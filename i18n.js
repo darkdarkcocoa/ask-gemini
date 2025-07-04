@@ -27,7 +27,7 @@ class I18n {
         requestTimeout: '요청 시간이 초과되었습니다. 다시 시도해주세요.',
         
         // Popup UI
-        title: 'Gemini 웹 AI 어시스턴트',
+        title: 'Ask Gemini',
         apiKeyLabel: 'Gemini API 키:',
         apiKeyPlaceholder: 'API 키를 입력하세요',
         enabledLabel: '확장 프로그램 활성화',
@@ -70,7 +70,7 @@ class I18n {
         requestTimeout: 'Request timed out. Please try again.',
         
         // Popup UI
-        title: 'Gemini Web AI Assistant',
+        title: 'Ask Gemini',
         apiKeyLabel: 'Gemini API Key:',
         apiKeyPlaceholder: 'Enter your API key',
         enabledLabel: 'Enable Extension',
